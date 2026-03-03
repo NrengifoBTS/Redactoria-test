@@ -1,0 +1,58 @@
+{
+  "name": "auth-app",
+  "version": "0.1.0",
+  "private": true,
+  "dependencies": {
+    "@iconscout/unicons": "^4.2.0",
+    "@testing-library/dom": "^10.4.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^13.5.0",
+    "@tiptap/extension-color": "^3.19.0",
+    "@tiptap/extension-font-family": "^3.19.0",
+    "@tiptap/extension-highlight": "^3.19.0",
+    "@tiptap/extension-link": "^3.19.0",
+    "@tiptap/extension-placeholder": "^3.19.0",
+    "@tiptap/extension-table": "^3.19.0",
+    "@tiptap/extension-table-cell": "^3.19.0",
+    "@tiptap/extension-table-header": "^3.19.0",
+    "@tiptap/extension-table-row": "^3.19.0",
+    "@tiptap/extension-text-align": "^3.19.0",
+    "@tiptap/extension-text-style": "^3.19.0",
+    "@tiptap/extension-underline": "^3.19.0",
+    "@tiptap/react": "^3.19.0",
+    "@tiptap/starter-kit": "^3.19.0",
+    "lucide-react": "^0.474.0",
+    "quill": "^2.0.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.6.1",
+    "react-scripts": "5.0.1",
+    "recharts": "^2.12.0",
+    "web-vitals": "^2.1.4"
+  },
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app",
+      "react-app/jest"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+}

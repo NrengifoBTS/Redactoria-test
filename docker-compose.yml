@@ -1,0 +1,35 @@
+services:
+  api-test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: api-container-test
+    ports:
+      - "8080:8080" # Tu PC ve el 8080, el contenedor interno también usa 8080
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db-test:5432/cleanfastapi
+      - BACKEND_PORT=8080
+    depends_on:
+      - db-test
+    volumes:
+      - ./src:/app/src
+      - ./data:/app/data
+      - ./alembic:/app/alembic
+    env_file:
+      - .env
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8080 --reload
+
+  db-test:
+    image: postgres:17
+    container_name: db-container-test
+    environment:
+      - POSTGRES_DB=cleanfastapi
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    volumes:
+      - postgres_data_test:/var/lib/postgresql/data
+    ports:
+      - "5444:5432" # <-- pgAdmin usará el 5444 para conectarse desde Windows
+
+volumes:
+  postgres_data_test:
