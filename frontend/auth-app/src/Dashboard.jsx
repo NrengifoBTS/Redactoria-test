@@ -295,6 +295,7 @@ function Dashboard() {
       draft: "#6b7280",
       pen_review: "#f59e0b",
       pen_ajuste: "#ef4444",
+      ajuste_aplicado: "#8044ef",
       approved: "#059669",
       rev_kws: "#E3AAAA",
       cargue: "#0ea5e9",
@@ -313,6 +314,7 @@ function Dashboard() {
       draft: <Edit3 size={16} />,
       pen_review: <FileText size={16} />,
       pen_ajuste: <AlertTriangle size={16} />,
+      ajuste_aplicado: <AlertTriangle size={16} />,
       approved: <ThumbsUp size={16} />,
       rev_kws: <Hash size={16} />,
       cargue: <Upload size={16} />,
@@ -329,7 +331,8 @@ function Dashboard() {
       in_progress: "En Redacción",
       pen_review: "Pendiente de Revisión",
       pen_ajuste: "Pendiente de Ajuste",
-      apporved: "Aprobado",
+      ajuste_aplicado: "Ajuste Aplicado",
+      approved: "Aprobado",
       rev_kws: "Pendiente KWS",
       cargue: "Cargue",
       en_it: "En IT",
@@ -663,6 +666,7 @@ function Dashboard() {
         {/* Tabla de Proyectos */}
         <ProjectsTable
           proyectos={visibleProyectos}
+          templates={templates}
           users={getAllUsers()}
           currentUser={currentUser}
           onEdit={canEdit}
@@ -906,6 +910,7 @@ function FilterPanel({
           <option value="in_progress">En Redacción</option>
           <option value="pen_review">Pendiente de Revisión</option>
           <option value="pen_ajuste">Pendiente de Ajuste</option>
+          <option value="ajuste_aplicado">Ajuste Aplicado</option>
           <option value="approved">Aprobado</option>
           <option value="rev_kws">Pendiente KWS</option>
           <option value="cargue">Cargue</option>
@@ -1022,6 +1027,7 @@ function FilterPanel({
 // Componente de la tabla de proyectos
 function ProjectsTable({
   proyectos,
+  templates,
   users,
   currentUser,
   onEdit,
@@ -1046,6 +1052,20 @@ function ProjectsTable({
       console.error(" Error al verificar landing page:", error);
       alert("Error al acceder a la landing page: " + error.message);
     }
+  };
+
+  const formatUsageType = (categoria) => {
+    const raw = (categoria || "").toString().trim();
+    if (!raw) return "Sin tipo";
+
+    const normalized = raw.toLowerCase();
+    if (normalized.includes("auto")) return "Autos";
+    if (normalized.includes("agenc")) return "Agencias";
+    if (normalized.includes("ofert")) return "Ofertas";
+    if (normalized.includes("local")) return "Localidad";
+    if (normalized.includes("ciudad")) return "Ciudad";
+
+    return raw.charAt(0).toUpperCase() + raw.slice(1);
   };
 
   return (
@@ -1074,6 +1094,19 @@ function ProjectsTable({
                 }}
               >
                 Nombre
+              </th>
+              <th
+                style={{
+                  padding: "0.75rem 1rem",
+                  textAlign: "left",
+                  fontSize: "0.75rem",
+                  fontWeight: "600",
+                  color: "#374151",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                }}
+              >
+                Template usado
               </th>
               <th
                 style={{
@@ -1147,6 +1180,9 @@ function ProjectsTable({
               const assignedUser = users?.find(
                 (u) => u.id === proyecto.assignedTo,
               );
+              const templateUsed = templates?.find(
+                (t) => t.id === proyecto.templateId,
+              );
 
               return (
                 <tr
@@ -1167,6 +1203,81 @@ function ProjectsTable({
                         {proyecto.name}
                       </p>
                     </div>
+                  </td>
+
+                  <td style={{ padding: "1rem" }}>
+                    {templateUsed ? (
+                      <div>
+                        <p
+                          style={{
+                            margin: 0,
+                            fontSize: "0.875rem",
+                            fontWeight: "600",
+                            color: "#1e293b",
+                          }}
+                        >
+                          {templateUsed.name}
+                        </p>
+                        <div
+                          style={{
+                            marginTop: "0.375rem",
+                            display: "flex",
+                            gap: "0.375rem",
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontSize: "0.7rem",
+                              fontWeight: "600",
+                              color: "#1d4ed8",
+                              backgroundColor: "#dbeafe",
+                              padding: "0.15rem 0.45rem",
+                              borderRadius: "9999px",
+                            }}
+                          >
+                            {templateUsed.proyecto || "-"}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: "0.7rem",
+                              fontWeight: "600",
+                              color: "#065f46",
+                              backgroundColor: "#d1fae5",
+                              padding: "0.15rem 0.45rem",
+                              borderRadius: "9999px",
+                            }}
+                          >
+                            {formatUsageType(templateUsed.categoria)}
+                          </span>
+                          {templateUsed.dominio && (
+                            <span
+                              style={{
+                                fontSize: "0.7rem",
+                                fontWeight: "600",
+                                color: "#6b21a8",
+                                backgroundColor: "#f3e8ff",
+                                padding: "0.15rem 0.45rem",
+                                borderRadius: "9999px",
+                              }}
+                            >
+                              {templateUsed.dominio}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <p style={{ margin: 0, fontSize: "0.8rem", color: "#9ca3af" }}>
+                          Template no disponible
+                        </p>
+                        {proyecto.templateId && (
+                          <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.75rem", color: "#9ca3af" }}>
+                            ID: {proyecto.templateId}
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </td>
 
                   <td style={{ padding: "1rem" }}>
@@ -2222,6 +2333,7 @@ function EditProyectoModal({ proyecto, onClose, onSubmit }) {
               <option value="in_progress">En Redacción</option>
               <option value="pen_review">Pendiente de Revisión</option>
               <option value="pen_ajuste">Pendiente de Ajuste</option>
+              <option value="ajuste_aplicado">Ajuste Aplicado</option>
               <option value="approved">Aprobado</option>
               <option value="rev_kws">Pendiente KWS</option>
               <option value="cargue">Cargue</option>

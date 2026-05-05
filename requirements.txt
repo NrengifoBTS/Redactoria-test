@@ -25,3 +25,7 @@ cloudscraper
 fake-useragent
 trafilatura
 html-to-docx
+
+
+openai
+python-dotenv

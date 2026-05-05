@@ -1,0 +1,32 @@
+# Entornos
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# IDEs
+.vscode/
+.idea/
+
+# Variables de entorno
+.env
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Archivos de datos grandes / temporal / backups
+dataset_structured.csv
+Cargue-Masivo-de-Contenido-main.zip
+Cargue-Masivo-de-Contenido-main/
+*.sql
+*.rar
+
+# Jupyter
+*.ipynb_checkpoints
+
+.gitnore
