@@ -19,10 +19,14 @@ __pycache__/
 .DS_Store
 **/.DS_Store
 
-# Archivos de datos grandes / temporal
+# Archivos de datos grandes / temporal / backups
 dataset_structured.csv
 Cargue-Masivo-de-Contenido-main.zip
 Cargue-Masivo-de-Contenido-main/
+*.sql
+*.rar
 
 # Jupyter
 *.ipynb_checkpoints
+
+.gitnore
