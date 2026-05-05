@@ -9,6 +9,7 @@ services:
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@db-test:5432/cleanfastapi
       - BACKEND_PORT=8080
+      - LM_STUDIO_URL=${LM_STUDIO_URL:-http://host.docker.internal:1234}
     depends_on:
       - db-test
     volumes:

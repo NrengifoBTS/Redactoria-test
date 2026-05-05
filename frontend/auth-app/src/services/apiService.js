@@ -359,16 +359,12 @@ class ApiService {
         tit: blockTitle,
         tema,
         lpId,
+        brand: templateInfo?.proyecto || "mcr",
         faqQuestions,
         favCityQuestions,
       };
 
-      // Agregar info del template si existe
-      if (templateInfo) {
-        payload.template_proyecto = templateInfo.proyecto;
-        payload.template_dominio = templateInfo.dominio;
-        payload.template_categoria = templateInfo.categoria;
-      } else {
+      if (!templateInfo) {
         console.warn("No hay templateInfo");
       }
 
@@ -569,6 +565,7 @@ class ApiService {
       published: "published",
       pen_review: "pen_review",
       pen_ajuste: "pen_ajuste",
+      ajuste_aplicado: "ajuste_aplicado",
       approved: "approved",
       rev_kws: "rev_kws",
       cargue: "cargue",
@@ -586,6 +583,7 @@ class ApiService {
       published: "completed",
       pen_review: "pen_review",
       pen_ajuste: "pen_ajuste",
+      ajuste_aplicado: "ajuste_aplicado",
       approved: "approved",
       rev_kws: "rev_kws",
       cargue: "cargue",

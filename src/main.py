@@ -22,7 +22,7 @@ from .entities.logging.narrative_flow import NarrativeFlow
 from .entities.logging.translation_quality import TranslationQuality
 
 from .api import register_routes
-from .logging import configure_logging, LogLevels
+from .logging_custom import configure_logging, LogLevels
 
 # Cargar variables de entorno desde .env
 from dotenv import load_dotenv

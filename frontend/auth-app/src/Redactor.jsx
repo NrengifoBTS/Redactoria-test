@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
+import "./Redactor.css";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   Save,
@@ -20,6 +21,7 @@ import { getExcelTemplate, columnHeaders, tableConfig } from "./templateConfig";
 import tableStyles, { getContainerStyle, getCellStyle } from "./tableStyles";
 import { isAdminUser, isEditorUser } from "./utils/roles";
 import apiService from "./services/apiService";
+import { colorizeField } from "./utils/colorUtils";
 
 // --- IMPORTACIONES TIPTAP  ---
 import { useEditor, EditorContent } from "@tiptap/react";
@@ -543,110 +545,97 @@ const BulkGenerationProgress = React.memo(function BulkGenerationProgress({
     progress.total > 0 ? (progress.current / progress.total) * 100 : 0;
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        top: "50%",
-        left: "50%",
-        transform: "translate(-50%, -50%)",
-        zIndex: 2000,
-        backgroundColor: "white",
-        border: "2px solid #8b5cf6",
-        borderRadius: "12px",
-        padding: "24px",
-        boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
-        minWidth: "400px",
-        maxWidth: "500px",
-      }}
-    >
-      {/* Header */}
+    <>
+      <div className="rd-backdrop" />
       <div
         style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "12px",
-          marginBottom: "16px",
+          position: "fixed",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          zIndex: 2000,
+          backgroundColor: "white",
+          border: "1px solid #e5e7eb",
+          borderRadius: "12px",
+          padding: "28px 32px",
+          boxShadow: "0 20px 60px rgba(0, 0, 0, 0.25)",
+          minWidth: "420px",
+          maxWidth: "520px",
         }}
       >
+        {/* Header */}
         <div
           style={{
-            fontSize: "24px",
-            animation: "spin 1s linear infinite",
+            display: "flex",
+            alignItems: "center",
+            gap: "14px",
+            marginBottom: "18px",
           }}
         >
-          🔄
+          <div className="rd-spinner-dark" />
+          <h3
+            style={{
+              margin: 0,
+              fontSize: "17px",
+              fontWeight: "600",
+              color: "#1f2937",
+            }}
+          >
+            Generando contenido...
+          </h3>
         </div>
-        <h3
+
+        {/* Status message */}
+        <p
           style={{
-            margin: 0,
-            fontSize: "18px",
-            fontWeight: "600",
-            color: "#1f2937",
+            margin: "0 0 18px 0",
+            fontSize: "13px",
+            color: "#6b7280",
+            fontWeight: "500",
           }}
         >
-          Generando contenido...
-        </h3>
-      </div>
+          {progress.status}
+        </p>
 
-      {/* Status message */}
-      <p
-        style={{
-          margin: "0 0 16px 0",
-          fontSize: "14px",
-          color: "#6b7280",
-          fontWeight: "500",
-        }}
-      >
-        {progress.status}
-      </p>
-
-      {/* Progress bar */}
-      <div
-        style={{
-          width: "100%",
-          height: "12px",
-          backgroundColor: "#e5e7eb",
-          borderRadius: "6px",
-          overflow: "hidden",
-          marginBottom: "8px",
-        }}
-      >
+        {/* Progress bar */}
         <div
           style={{
-            width: `${percentage}%`,
-            height: "100%",
-            backgroundColor: "#8b5cf6",
-            transition: "width 0.3s ease",
+            width: "100%",
+            height: "10px",
+            backgroundColor: "#f3f4f6",
             borderRadius: "6px",
+            overflow: "hidden",
+            marginBottom: "10px",
           }}
-        />
-      </div>
+        >
+          <div
+            style={{
+              width: `${percentage}%`,
+              height: "100%",
+              background: "linear-gradient(90deg, #8b5cf6, #6366f1)",
+              transition: "width 0.3s ease",
+              borderRadius: "6px",
+            }}
+          />
+        </div>
 
-      {/* Counter */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          fontSize: "12px",
-          color: "#9ca3af",
-          fontWeight: "500",
-        }}
-      >
-        <span>
-          {progress.current} de {progress.total}
-        </span>
-        <span>{Math.round(percentage)}%</span>
+        {/* Counter */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            fontSize: "12px",
+            color: "#9ca3af",
+            fontWeight: "500",
+          }}
+        >
+          <span>
+            {progress.current} de {progress.total}
+          </span>
+          <span>{Math.round(percentage)}%</span>
+        </div>
       </div>
-
-      <style>
-        {`
-            @keyframes spin {
-              from { transform: rotate(0deg); }
-              to { transform: rotate(360deg); }
-            }
-          `}
-      </style>
-    </div>
+    </>
   );
 });
 
@@ -670,6 +659,8 @@ export default function Redactor() {
 
   const [editingCell, setEditingCell] = useState(null);
   const [tableData, setTableData] = useState({});
+  const tableDataRef = useRef({});
+  useEffect(() => { tableDataRef.current = tableData; }, [tableData]);
   const [mergedCells, setMergedCells] = useState({});
   const [columnWidths, setColumnWidths] = useState({});
   const [blocksMetadata, setBlocksMetadata] = useState({});
@@ -720,11 +711,7 @@ export default function Redactor() {
       // Solo actualizar si el contenido realmente cambió
       const currentContent = tableData[editingCell]?.content || "";
 
-      // Validamos que no sea solo un párrafo vacío que Tiptap suele poner "<p></p>"
-      const isEmptyTiptap =
-        cleanedContent === "<p></p>" || cleanedContent === "";
-
-      if (cleanedContent !== currentContent && !isEmptyTiptap) {
+      if (cleanedContent !== currentContent) {
         setTableData((prev) => ({
           ...prev,
           [editingCell]: {
@@ -810,7 +797,8 @@ export default function Redactor() {
     if (
       block.type === "car_rental" ||
       block.type === "fleetcarrusel" ||
-      block.type === "advicestipocarrusel"
+      block.type === "advicestipocarrusel" ||
+      block.type === "deals"
     ) {
       const carTypes = []; // En este caso serían "tipos de consejos"
       if (block.contentMapping) {
@@ -1311,7 +1299,8 @@ export default function Redactor() {
           block,
           tableData,
         );
-        const blockTitle = titleInfo.title;
+        // Si la celda H1/H2 está vacía (LP nuevo sin contenido), usa el título del LP
+        const blockTitle = titleInfo.title || tema;
 
         console.log(`  📌 Título del bloque: "${blockTitle}"`);
         console.log(`  ❓ FAQs:`, titleInfo.faqQuestions);
@@ -1339,6 +1328,8 @@ export default function Redactor() {
 
         // Actualizar tableData con el contenido generado
         if (generatedContent?.structured_content) {
+          const brand = currentTemplate?.proyecto || "mcr";
+          const baseDesc = generatedContent.structured_content["desc"] || "";
           setTableData((prev) => {
             const updates = { ...prev };
             Object.entries(block.contentMapping).forEach(
@@ -1346,14 +1337,67 @@ export default function Redactor() {
                 let contentValue =
                   generatedContent.structured_content[contentField];
 
+                if (contentValue === undefined) {
+                  if (contentField.startsWith("desc_")) {
+                    const number = contentField.replace("desc_", "");
+                    contentValue =
+                      generatedContent.structured_content[`faq_${number}`];
+                  } else if (contentField.startsWith("faq_")) {
+                    const number = contentField.replace("faq_", "");
+                    contentValue =
+                      generatedContent.structured_content[`desc_${number}`];
+                  }
+                }
+
                 if (contentValue !== undefined) {
                   console.log(
                     `    ➕ Actualizando ${contentCellKey} con campo ${contentField}`,
                   );
-                  updates[contentCellKey] = { content: contentValue };
+                  const colorized = colorizeField(
+                    contentField,
+                    contentValue,
+                    brand,
+                    baseDesc,
+                  );
+                  updates[contentCellKey] = { content: colorized };
+
+                  // Para FAQ/Favorite Cities: actualizar el título H3 de la fila anterior
+                  if (
+                    contentField.startsWith("desc_") ||
+                    contentField.startsWith("faq_")
+                  ) {
+                    const index = contentField
+                      .replace("desc_", "")
+                      .replace("faq_", "");
+                    const titleValue =
+                      generatedContent.structured_content[`q_${index}`] ||
+                      generatedContent.structured_content[`tit_${index}`];
+                    if (titleValue) {
+                      const [respRow] = contentCellKey.split("-").map(Number);
+                      const titleCellKey = `${respRow - 1}-3`;
+                      updates[titleCellKey] = { content: titleValue };
+                    }
+                  }
                 }
               },
             );
+            // Título H1/H2: structured_content.titulo o tit → celda titleRow-3
+            // Para fav_city/locationscarrusel el H2 siempre está en startRow
+            const tituloGenerado =
+              generatedContent.structured_content.titulo ||
+              generatedContent.structured_content.tit;
+            if (tituloGenerado) {
+              const isFavCity =
+                block.type === "fav_city" || block.type === "locationscarrusel";
+              const h2Row = isFavCity ? block.startRow : block.titleRow;
+              if (h2Row !== undefined) {
+                const titleCellKey = `${h2Row}-3`;
+                console.log(
+                  `    ➕ Actualizando título ${titleCellKey} con: ${tituloGenerado}`,
+                );
+                updates[titleCellKey] = { content: tituloGenerado };
+              }
+            }
             return updates;
           });
         }
@@ -1367,6 +1411,10 @@ export default function Redactor() {
     }
 
     console.log("✅ Generación completada!");
+
+    // auto-save silencioso tras generación masiva
+    saveRedactorProgress(currentLP.id, tableDataRef.current, annotations)
+      .catch(() => {});
 
     setBulkProgress({
       current: totalBlocks,
@@ -1620,10 +1668,23 @@ export default function Redactor() {
           const templateCell = templateData[key];
           const existingCell = existingSections[key];
 
+          // Columnas 1-2: etiquetas estructurales del template (H1, H2, etc.)
+          // Columnas 3+: contenido generado por IA — vacío salvo celdas de disclaimer
+          const [rowStr, colStr] = key.split("-");
+          const col = parseInt(colStr);
+          let fallback = "";
+          if (col >= 3) {
+            const labelCell = templateData[`${rowStr}-2`];
+            const label = (labelCell?.text || "").toLowerCase();
+            if (label.includes("disclaimer")) {
+              fallback = templateCell?.text || "";
+            }
+          } else {
+            fallback = templateCell?.text || "";
+          }
+
           mergedTableData[key] = {
-            content: existingCell
-              ? existingCell.content
-              : templateCell?.text || "",
+            content: existingCell ? existingCell.content : fallback,
           };
         });
 
@@ -2035,6 +2096,33 @@ export default function Redactor() {
 
     setAnnotationPanelPosition({ x, y });
     setShowAnnotationPanel(true);
+  };
+
+  const clearAllContent = () => {
+    if (
+      !window.confirm(
+        "¿Estás seguro de que quieres borrar todo el contenido de Español, Inglés y Portugués? Esta acción no se puede deshacer.",
+      )
+    )
+      return;
+
+    setEditingCell(null);
+    setShowColorToolbar(false);
+    setTextSelection(null);
+    closeAnnotationPanel();
+    setSelectedCell(null);
+    setSelectedRange(null);
+
+    setTableData((prev) => {
+      const updated = { ...prev };
+      Object.keys(updated).forEach((key) => {
+        const col = parseInt(key.split("-")[1], 10);
+        if (col === 3 || col === 4 || col === 5) {
+          updated[key] = { ...updated[key], content: "" };
+        }
+      });
+      return updated;
+    });
   };
 
   const resetToTemplate = () => {
@@ -2600,59 +2688,7 @@ export default function Redactor() {
   }
 
   return (
-    <div style={getContainerStyle(isResizing)}>
-      {/* Estilos CSS */}
-      <style>{`
-        .cell-editor:empty::before {
-          content: attr(data-placeholder);
-          color: #9ca3af;
-          font-style: italic;
-          pointer-events: none;
-        }
-        .cell-editor:focus:empty::before {
-          opacity: 0.5;
-        }
-        .cell-editor:focus {
-          outline: none !important;
-          box-shadow: none !important;
-        }
-        .cell-editor {
-          border: none !important;
-          outline: none !important;
-          direction: ltr !important;
-          text-align: left !important;
-          transform: none !important;
-          writing-mode: horizontal-tb !important;
-          unicode-bidi: normal !important;
-        }
-        td:focus {
-          outline: none !important;
-        }
-        *::selection {
-          background: rgba(59, 130, 246, 0.3);
-        }
-        .cell-editor * {
-          user-select: text;
-        }
-        textarea {
-          direction: ltr !important;
-          text-align: left !important;
-          transform: none !important;
-          writing-mode: horizontal-tb !important;
-          unicode-bidi: normal !important;
-        }
-        [contenteditable="true"] {
-          direction: ltr !important;
-          text-align: left !important;
-          transform: none !important;
-          writing-mode: horizontal-tb !important;
-        }
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-      `}</style>
-
+    <div className="rd-root" style={getContainerStyle(isResizing)}>
       {/* Rich Text Color Toolbar */}
       {showColorToolbar && (
         <div
@@ -2744,6 +2780,7 @@ export default function Redactor() {
             "#150a44",
             "#00ffff",
             "#00eba7",
+            "#209986",
             "#B45F1D",
             "#9900ff",
           ].map((color) => (
@@ -2811,15 +2848,7 @@ export default function Redactor() {
       />
 
       {/* Navbar */}
-      <nav
-        style={{
-          ...tableStyles.navbar,
-          position: "sticky",
-          top: 0,
-          zIndex: 100,
-          boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)",
-        }}
-      >
+      <nav className="rd-navbar">
         <div style={tableStyles.navContent}>
           <div style={tableStyles.navLeft}>
             <button
@@ -2831,24 +2860,9 @@ export default function Redactor() {
                     : "/dashboard",
                 );
               }}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "0.5rem",
-                padding: "0.5rem 1rem",
-                backgroundColor: "transparent",
-                border: "1px solid #e5e7eb",
-                borderRadius: "0.375rem",
-                color: "#374151",
-                cursor: "pointer",
-                marginRight: "1rem",
-                fontSize: "0.875rem",
-                fontWeight: "500",
-              }}
-              onMouseOver={(e) => (e.target.style.backgroundColor = "#f3f4f6")}
-              onMouseOut={(e) =>
-                (e.target.style.backgroundColor = "transparent")
-              }
+              className="rd-btn rd-btn-back"
+              style={{ marginRight: "1rem" }}
+              title="Volver al dashboard"
             >
               <ArrowLeft size={16} />
               Dashboard
@@ -2880,8 +2894,8 @@ export default function Redactor() {
               <button
                 onClick={saveProgress}
                 disabled={saveStatus === "saving"}
+                className="rd-btn"
                 style={{
-                  ...tableStyles.primaryButton,
                   backgroundColor:
                     saveStatus === "saved"
                       ? "#10b981"
@@ -2890,6 +2904,7 @@ export default function Redactor() {
                         : saveStatus === "saving"
                           ? "#6b7280"
                           : "#3b82f6",
+                  color: "white",
                   cursor: saveStatus === "saving" ? "not-allowed" : "pointer",
                 }}
                 title={
@@ -2904,31 +2919,22 @@ export default function Redactor() {
               >
                 {saveStatus === "saving" ? (
                   <>
-                    <div
-                      style={{
-                        width: "16px",
-                        height: "16px",
-                        border: "2px solid #ffffff40",
-                        borderTop: "2px solid #ffffff",
-                        borderRadius: "50%",
-                        animation: "spin 1s linear infinite",
-                      }}
-                    />
+                    <div className="rd-spinner" />
                     <span>Guardando...</span>
                   </>
                 ) : saveStatus === "saved" ? (
                   <>
-                    <CheckCircle2 size={16} />
+                    <CheckCircle2 size={15} />
                     <span>Guardar</span>
                   </>
                 ) : saveStatus === "error" ? (
                   <>
-                    <AlertCircle size={16} />
+                    <AlertCircle size={15} />
                     <span>Error</span>
                   </>
                 ) : (
                   <>
-                    <Save size={16} />
+                    <Save size={15} />
                     <span>Guardar</span>
                   </>
                 )}
@@ -2938,39 +2944,13 @@ export default function Redactor() {
               <button
                 onClick={exportToExcelWithTemplate}
                 disabled={isExporting}
-                style={{
-                  ...tableStyles.primaryButton,
-                  backgroundColor: isExporting ? "#6b7280" : "#10b981",
-                  marginLeft: "0.5rem",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.5rem",
-                  cursor: isExporting ? "not-allowed" : "pointer",
-                }}
-                onMouseOver={(e) => {
-                  if (!isExporting) {
-                    e.target.style.backgroundColor = "#059669";
-                  }
-                }}
-                onMouseOut={(e) => {
-                  if (!isExporting) {
-                    e.target.style.backgroundColor = "#10b981";
-                  }
-                }}
+                className="rd-btn rd-btn-success"
+                style={{ marginLeft: "0.5rem" }}
                 title={isExporting ? "Exportando..." : "Exportar a Excel"}
               >
                 {isExporting ? (
                   <>
-                    <div
-                      style={{
-                        width: "16px",
-                        height: "16px",
-                        border: "2px solid #ffffff40",
-                        borderTop: "2px solid #ffffff",
-                        borderRadius: "50%",
-                        animation: "spin 1s linear infinite",
-                      }}
-                    />
+                    <div className="rd-spinner" />
                     <span>Exportando...</span>
                   </>
                 ) : (
@@ -2980,69 +2960,87 @@ export default function Redactor() {
                   </>
                 )}
               </button>
+
+              {/* BOTÓN BORRAR TODO */}
+              <button
+                onClick={clearAllContent}
+                className="rd-btn"
+                style={{
+                  marginLeft: "0.5rem",
+                  backgroundColor: "#ef4444",
+                  color: "white",
+                }}
+                title="Borrar todo el contenido"
+              >
+                <Trash2 size={16} />
+                <span>Borrar Todo</span>
+              </button>
             </div>
           </div>
 
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "0.75rem",
-              backgroundColor: "#f1f5f9",
-              padding: "0.5rem 1rem",
-              borderRadius: "0.5rem",
-            }}
-          >
+          {currentUser && (
             <div
               style={{
-                width: "2rem",
-                height: "2rem",
-                backgroundColor: "#3b82f6",
-                borderRadius: "50%",
                 display: "flex",
                 alignItems: "center",
-                justifyContent: "center",
-                color: "white",
-                fontSize: "0.875rem",
-                fontWeight: "600",
+                gap: "0.75rem",
+                backgroundColor: "#f1f5f9",
+                padding: "0.5rem 1rem",
+                borderRadius: "0.5rem",
               }}
             >
-              {currentUser.avatar ||
-                (currentUser.first_name || currentUser.last_name
-                  ? `${(currentUser.first_name?.[0] || "").toUpperCase()}${(
-                      currentUser.last_name?.[0] || ""
-                    ).toUpperCase()}`
-                  : (currentUser.email?.[0] || "").toUpperCase())}
-            </div>
-            <div>
-              <p
+              <div
                 style={{
-                  margin: 0,
+                  width: "2rem",
+                  height: "2rem",
+                  backgroundColor: "#3b82f6",
+                  borderRadius: "50%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "white",
                   fontSize: "0.875rem",
                   fontWeight: "600",
-                  color: "#1e293b",
                 }}
               >
-                {currentUser.name}
-              </p>
-              <p style={{ margin: 0, fontSize: "0.75rem", color: "#64748b" }}>
-                {isAdminUser && isAdminUser(currentUser.id)
-                  ? "Administrador"
-                  : isEditorUser && isEditorUser(currentUser.id)
-                    ? "Editor"
-                    : "Visualizador"}
-              </p>
+                {currentUser.avatar ||
+                  (currentUser.first_name || currentUser.last_name
+                    ? `${(currentUser.first_name?.[0] || "").toUpperCase()}${(
+                        currentUser.last_name?.[0] || ""
+                      ).toUpperCase()}`
+                    : (currentUser.email?.[0] || "").toUpperCase())}
+              </div>
+              <div>
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: "0.875rem",
+                    fontWeight: "600",
+                    color: "#1e293b",
+                  }}
+                >
+                  {currentUser.name}
+                </p>
+                <p style={{ margin: 0, fontSize: "0.75rem", color: "#64748b" }}>
+                  {isAdminUser && isAdminUser(currentUser.id)
+                    ? "Administrador"
+                    : isEditorUser && isEditorUser(currentUser.id)
+                      ? "Editor"
+                      : "Visualizador"}
+                </p>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </nav>
 
       {/* Indicador de estado de guardado */}
       {saveStatus !== "idle" && (
         <div
+          className="rd-toast"
           style={{
             position: "fixed",
-            top: "100px",
+            top: "76px",
             right: "20px",
             zIndex: 1000,
             backgroundColor:
@@ -3052,30 +3050,11 @@ export default function Redactor() {
                   ? "#ef4444"
                   : "#3b82f6",
             color: "white",
-            padding: "0.75rem 1rem",
-            borderRadius: "0.5rem",
-            boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
-            display: "flex",
-            alignItems: "center",
-            gap: "0.5rem",
-            fontSize: "0.875rem",
-            fontWeight: "500",
           }}
         >
-          {saveStatus === "saving" && (
-            <div
-              style={{
-                width: "16px",
-                height: "16px",
-                border: "2px solid #ffffff40",
-                borderTop: "2px solid #ffffff",
-                borderRadius: "50%",
-                animation: "spin 1s linear infinite",
-              }}
-            />
-          )}
-          {saveStatus === "saved" && <CheckCircle2 size={16} />}
-          {saveStatus === "error" && <AlertCircle size={16} />}
+          {saveStatus === "saving" && <div className="rd-spinner" />}
+          {saveStatus === "saved" && <CheckCircle2 size={15} />}
+          {saveStatus === "error" && <AlertCircle size={15} />}
 
           <span>
             {saveStatus === "saving" && "Guardando progreso..."}
@@ -3086,17 +3065,8 @@ export default function Redactor() {
       )}
 
       {/* Barra de herramientas */}
-      <div
-        style={{
-          ...tableStyles.toolbar,
-          position: "sticky",
-          top: "80px",
-          zIndex: 99,
-          boxShadow: "0 2px 4px rgba(0, 0, 0, 0.05)",
-          borderBottom: "1px solid #e5e7eb",
-        }}
-      >
-        <div style={tableStyles.toolbarButtons}>
+      <div className="rd-toolbar">
+        <div className="rd-toolbar-buttons">
           {/* Botón de IA - Solo para columna Español */}
           {(() => {
             if (!selectedCell || editingCell) return null;
@@ -3111,16 +3081,7 @@ export default function Redactor() {
 
             return (
               <button
-                style={{
-                  ...tableStyles.mergeButton,
-                  backgroundColor: "#8b5cf6",
-                  color: "white",
-                  cursor: "pointer",
-                  marginRight: "8px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "4px",
-                }}
+                className="rd-tbtn rd-tbtn-purple"
                 onClick={async (event) => {
                   if (!selectedCell) return;
 
@@ -3135,7 +3096,8 @@ export default function Redactor() {
                       block,
                       tableData,
                     );
-                    const blockTitle = titleInfo.title;
+                    // Si la celda de título está vacía (LP nuevo), usa el título del LP
+                    const blockTitle = titleInfo.title || tema;
                     const currentTemplate = getCurrentTemplate();
 
                     if (!blockTitle || blockTitle.trim() === "") {
@@ -3171,45 +3133,14 @@ export default function Redactor() {
                       }
                     }
 
-                    // Validación especial para fav_city
-                    if (block.type === "fav_city") {
-                      if (
-                        !titleInfo.favCityQuestions ||
-                        titleInfo.favCityQuestions.length === 0
-                      ) {
-                        alert(
-                          "No hay preguntas/títulos de ciudad escritos en este bloque. Primero agrega los títulos en las celdas H3 correspondientes.",
-                        );
-                        // Restaurar botón
-                        button.innerHTML = originalHTML;
-                        button.disabled = false;
-                        button.style.cursor = "pointer";
-                        return;
-                      }
-                    }
-
-                    // Validación especial para FAQs
-                    if (block.type === "faqs") {
-                      if (
-                        !titleInfo.faqQuestions ||
-                        titleInfo.faqQuestions.length === 0
-                      ) {
-                        alert(
-                          "No hay preguntas FAQ escritas en este bloque. Primero agrega las preguntas en las celdas H3 FAQ correspondientes.",
-                        );
-                        // Restaurar botón
-                        button.innerHTML = originalHTML;
-                        button.disabled = false;
-                        button.style.cursor = "pointer";
-                        return;
-                      }
-                    }
+                    // Ya no exigimos títulos/preguntas manuales para FAQ/Favorite Cities.
+                    // Si vienen vacíos, el backend autogenera q_i/tit_i y los devuelve.
 
                     // Mostrar estado de carga
                     const button = event.target.closest("button");
                     const originalHTML = button.innerHTML;
                     button.innerHTML =
-                      "<span>🔄</span><span>Generando...</span>";
+                      '<div class="rd-spinner"></div><span>Generando...</span>';
                     button.disabled = true;
 
                     let generatedContent = null;
@@ -3218,7 +3149,7 @@ export default function Redactor() {
                     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
                       try {
                         if (attempt > 1) {
-                          button.innerHTML = `<span>🔄</span><span>Reintentando... (${attempt}/${MAX_RETRIES})</span>`;
+                          button.innerHTML = `<div class="rd-spinner"></div><span>Reintentando... (${attempt}/${MAX_RETRIES})</span>`;
                         }
 
                         generatedContent = await callIAEndpoint({
@@ -3306,7 +3237,7 @@ export default function Redactor() {
                     }
 
                     button.innerHTML =
-                      "<span>🔄</span><span>Generando...</span>";
+                      '<div class="rd-spinner"></div><span>Generando...</span>';
                     button.disabled = true;
                     button.style.cursor = "not-allowed";
 
@@ -3330,15 +3261,14 @@ export default function Redactor() {
                         Object.keys(content?.structured_content || {}),
                       );
 
+                      const brand = currentTemplate?.proyecto || "mcr";
+                      const baseDesc =
+                        content?.structured_content?.["desc"] || "";
+
                       setTableData((prev) => {
                         const updates = { ...prev };
                         const blockKey = String(blockNumber);
                         const meta = blocksMetadata[blockKey];
-
-                        console.log(
-                          "🔍 contentMapping KEYS:",
-                          Object.keys(meta?.contentMapping || {}),
-                        );
 
                         if (!meta || !meta.contentMapping) {
                           console.warn(
@@ -3397,13 +3327,66 @@ export default function Redactor() {
                                   }
                                 }
                               }
+
+                              // FAQ: permitir que faq_i tome q_i cuando el backend envía preguntas
+                              if (
+                                contentValue === undefined &&
+                                field.startsWith("faq_")
+                              ) {
+                                const number = field.replace("faq_", "");
+                                const altField = `q_${number}`;
+                                contentValue =
+                                  content.structured_content[altField];
+                                if (contentValue !== undefined) {
+                                  console.log(
+                                    `✅ Campo '${field}' no encontrado, usando '${altField}'`,
+                                  );
+                                }
+                              }
                             }
 
                             if (contentValue !== undefined) {
-                              console.log(
-                                `✅ Actualizando celda ${cellKey} con contenido`,
+                              const colorized = colorizeField(
+                                field,
+                                contentValue,
+                                brand,
+                                baseDesc,
                               );
-                              updates[cellKey] = { content: contentValue };
+                              if (!colorized) {
+                                console.log(
+                                  `⚠️ Campo '${field}' generó valor vacío — celda ${cellKey} sin cambios`,
+                                );
+                              } else {
+                                console.log(
+                                  `✅ Actualizando celda ${cellKey} con contenido`,
+                                );
+                                updates[cellKey] = { content: colorized };
+
+                                // Para FAQ/Favorite Cities: actualizar título H3 en la fila anterior
+                                if (
+                                  field.startsWith("desc_") ||
+                                  field.startsWith("faq_")
+                                ) {
+                                  const index = field
+                                    .replace("desc_", "")
+                                    .replace("faq_", "");
+                                  const titleValue =
+                                    content.structured_content[`q_${index}`] ||
+                                    content.structured_content[`tit_${index}`];
+                                  if (titleValue) {
+                                    const [respRow] = cellKey
+                                      .split("-")
+                                      .map(Number);
+                                    const titleCellKey = `${respRow - 1}-3`;
+                                    updates[titleCellKey] = {
+                                      content: titleValue,
+                                    };
+                                    console.log(
+                                      `✅ Actualizando título de item ${titleCellKey} con: ${titleValue}`,
+                                    );
+                                  }
+                                }
+                              }
                             } else {
                               console.log(
                                 `❌ Campo '${field}' NO encontrado en structured_content`,
@@ -3412,10 +3395,35 @@ export default function Redactor() {
                           },
                         );
 
+                        // Título H1/H2: structured_content.titulo o tit → celda titleRow-3
+                        // Para fav_city/locationscarrusel el H2 siempre está en startRow
+                        const tituloGenerado =
+                          content.structured_content?.titulo ||
+                          content.structured_content?.tit;
+                        if (tituloGenerado) {
+                          const isFavCity =
+                            meta.type === "fav_city" ||
+                            meta.type === "locationscarrusel";
+                          const h2Row = isFavCity
+                            ? meta.startRow
+                            : meta.titleRow;
+                          if (h2Row !== undefined) {
+                            const titleCellKey = `${h2Row}-3`;
+                            console.log(
+                              `✅ Actualizando título ${titleCellKey} con: ${tituloGenerado}`,
+                            );
+                            updates[titleCellKey] = { content: tituloGenerado };
+                          }
+                        }
+
                         return updates;
                       });
                     };
                     updateTableDataByBlock(block.number, generatedContent);
+
+                    // auto-save silencioso tras generación IA individual
+                    saveRedactorProgress(currentLP.id, tableDataRef.current, annotations)
+                      .catch(() => {});
 
                     // Restaurar botón
                     button.innerHTML = originalHTML;
@@ -3435,7 +3443,7 @@ export default function Redactor() {
                     // Restaurar botón en caso de error
                     const button = event.target.closest("button");
                     if (button) {
-                      button.innerHTML = `<span>🤖</span><span>IA ${block.name}</span>`;
+                      button.innerHTML = `<span>IA ${block.name}</span>`;
                       button.disabled = false;
                       button.style.cursor = "pointer";
                     }
@@ -3476,25 +3484,15 @@ export default function Redactor() {
 
             return (
               <button
-                style={{
-                  ...tableStyles.mergeButton,
-                  backgroundColor: "#10b981",
-                  color: "white",
-                  cursor: "pointer",
-                  marginRight: "8px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "4px",
-                }}
+                className="rd-tbtn rd-tbtn-success"
                 onClick={async (event) => {
                   if (!selectedCell) return;
 
                   try {
-                    // Mostrar estado de carga
                     const button = event.target.closest("button");
                     const originalHTML = button.innerHTML;
                     button.innerHTML =
-                      "<span>🔄</span><span>Traduciendo...</span>";
+                      '<div class="rd-spinner"></div><span>Traduciendo...</span>';
                     button.disabled = true;
                     button.style.cursor = "not-allowed";
 
@@ -3506,7 +3504,6 @@ export default function Redactor() {
                       null,
                     );
 
-                    // Actualizar la celda con el contenido traducido
                     setTableData((prev) => ({
                       ...prev,
                       [selectedCell]: {
@@ -3514,7 +3511,6 @@ export default function Redactor() {
                       },
                     }));
 
-                    // Restaurar botón
                     button.innerHTML = originalHTML;
                     button.disabled = false;
                     button.style.cursor = "pointer";
@@ -3522,9 +3518,8 @@ export default function Redactor() {
                     console.error("Error traduciendo contenido:", error);
                     alert("Error al traducir contenido: " + error.message);
 
-                    // Restaurar botón en caso de error
                     const button = event.target.closest("button");
-                    button.innerHTML = `<span>🌐</span><span>Traducir a ${targetLanguage}</span>`;
+                    button.innerHTML = `<span>Traducir a ${targetLanguage}</span>`;
                     button.disabled = false;
                     button.style.cursor = "pointer";
                   }
@@ -3537,18 +3532,9 @@ export default function Redactor() {
           })()}
 
           {/* Botón para generar todas las filas en español */}
+          <div className="rd-toolbar-sep" />
           <button
-            style={{
-              ...tableStyles.mergeButton,
-              backgroundColor: isBulkGenerating ? "#9ca3af" : "#6366f1",
-              color: "white",
-              cursor: isBulkGenerating ? "not-allowed" : "pointer",
-              marginRight: "8px",
-              display: "flex",
-              alignItems: "center",
-              gap: "4px",
-              fontWeight: "600",
-            }}
+            className={`rd-tbtn ${isBulkGenerating ? "rd-tbtn-muted" : "rd-tbtn-indigo"}`}
             onClick={async () => {
               if (isBulkGenerating) return;
 
@@ -3568,17 +3554,7 @@ export default function Redactor() {
 
           {/* Botón para traducir todas las filas */}
           <button
-            style={{
-              ...tableStyles.mergeButton,
-              backgroundColor: isBulkGenerating ? "#9ca3af" : "#ec4899",
-              color: "white",
-              cursor: isBulkGenerating ? "not-allowed" : "pointer",
-              marginRight: "8px",
-              display: "flex",
-              alignItems: "center",
-              gap: "4px",
-              fontWeight: "600",
-            }}
+            className={`rd-tbtn ${isBulkGenerating ? "rd-tbtn-muted" : "rd-tbtn-pink"}`}
             onClick={async () => {
               if (isBulkGenerating) return;
 
@@ -3596,14 +3572,9 @@ export default function Redactor() {
             <span>Traducir Todo (EN+PT)</span>
           </button>
 
+          <div className="rd-toolbar-sep" />
           <button
-            style={{
-              ...tableStyles.mergeButton,
-              backgroundColor:
-                selectedCell && !editingCell ? "#f59e0b" : "#f3f4f6",
-              color: selectedCell && !editingCell ? "white" : "#9ca3af",
-              cursor: selectedCell && !editingCell ? "pointer" : "not-allowed",
-            }}
+            className={`rd-tbtn ${selectedCell && !editingCell ? "rd-tbtn-warning" : "rd-tbtn-inactive"}`}
             onClick={() =>
               selectedCell && !editingCell && addOrEditAnnotation(selectedCell)
             }
