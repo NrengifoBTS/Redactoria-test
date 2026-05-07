@@ -6,6 +6,7 @@ class ApiService {
     this.baseURL = API_BASE_URL;
   }
 
+
   // Configurar headers comunes
   getHeaders() {
     const headers = {
@@ -1020,6 +1021,19 @@ class ApiService {
       }
       throw error;
     }
+  }
+
+  /**
+   * Revisar ortografía del blog con IA (OpenAI).
+   * Devuelve { blog_id, errors: [{wrong, correct, reason}], checked_chars }.
+   * No modifica el blog en la DB; el frontend resalta los errores y se
+   * marca el blog como "Revisado con IA".
+   */
+  async reviewBlogWithAI(blogId) {
+    const response = await this.makeRequest(`/blogs/${blogId}/review-ia`, {
+      method: "POST",
+    });
+    return response;
   }
 
   /**

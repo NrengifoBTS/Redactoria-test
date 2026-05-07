@@ -342,6 +342,8 @@ const GeneracionBlog = () => {
   const [, setTempContentUpdate] = useState(null);
   const [listaUrls, setListaUrls] = useState(["", "", ""]);
   const [estadosUrls, setEstadosUrls] = useState({});
+  const [revisandoIA, setRevisandoIA] = useState(false);
+  const [erroresRevisionIA, setErroresRevisionIA] = useState([]);
 
   const { user: currentUser } = useCurrentUser();
 
@@ -770,6 +772,101 @@ const GeneracionBlog = () => {
       setHasUnsavedChanges(true);
     }
   }, [hasUnsavedChanges]);
+
+  // ───────────────────────────────────────────────────────────────────────
+  // REVISIÓN ORTOGRÁFICA POR IA (OpenAI)
+  // ───────────────────────────────────────────────────────────────────────
+
+  // Inserta <mark class="ia-spell-error"> alrededor de cada palabra/expresión
+  // detectada como error ortográfico, sin alterar las marcas de estructura
+  // del Markdown ([H1 - 0.0], [CONTENIDO], [MULTIMEDIA: ...]).
+  const aplicarResaltadoErrores = useCallback((markdown, errores) => {
+    if (!markdown || !errores?.length) return markdown;
+
+    const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const esPalabraSimple = (s) => /^[\wÁÉÍÓÚÜÑáéíóúüñ\-']+$/u.test(s);
+
+    let resultado = markdown;
+    for (const err of errores) {
+      const wrong = err.wrong || "";
+      const correct = err.correct || "";
+      const reason = err.reason || "ortografía";
+      if (!wrong || wrong === correct) continue;
+
+      const titleAttr = `Sugerencia: ${correct} (${reason})`
+        .replace(/"/g, "&quot;");
+      const replacement =
+        `<mark class="ia-spell-error" data-correct="${correct.replace(/"/g, "&quot;")}" ` +
+        `title="${titleAttr}">${wrong}</mark>`;
+
+      // Si es palabra simple usamos word boundaries; si lleva espacios o
+      // signos, hacemos match literal.
+      const pattern = esPalabraSimple(wrong)
+        ? new RegExp(`(?<![\\wÁÉÍÓÚÜÑáéíóúüñ])${escapeRegex(wrong)}(?![\\wÁÉÍÓÚÜÑáéíóúüñ])`, "g")
+        : new RegExp(escapeRegex(wrong), "g");
+
+      // Evitamos volver a envolver una ocurrencia ya marcada.
+      resultado = resultado.replace(pattern, (match, offset, full) => {
+        const before = full.slice(Math.max(0, offset - 40), offset);
+        if (/<mark class="ia-spell-error"[^>]*>[^<]*$/.test(before)) {
+          return match;
+        }
+        return replacement;
+      });
+    }
+    return resultado;
+  }, []);
+
+  // Handler del botón "Revisar con IA"
+  const revisarConIA = useCallback(async () => {
+    if (!localBlogId || !tablaEstructuraFinal || revisandoIA) return;
+    setRevisandoIA(true);
+    try {
+      const data = await apiService.reviewBlogWithAI(localBlogId);
+      const errores = Array.isArray(data?.errors) ? data.errors : [];
+
+      if (errores.length === 0) {
+        showToast("Revisión completada: no se detectaron errores ortográficos.", "success");
+      } else {
+        const nuevoMarkdown = aplicarResaltadoErrores(tablaEstructuraFinal, errores);
+        setTablaEstructuraFinal(nuevoMarkdown);
+        setErroresRevisionIA(errores);
+        markAsChanged();
+        showToast(
+          `Revisión completada: ${errores.length} ${errores.length === 1 ? "error detectado" : "errores detectados"} y resaltados en amarillo.`,
+          "success"
+        );
+      }
+
+      // Pasar el blog a estado "Revisado con IA"
+      setBlogStatus("reviewed_ai");
+      try {
+        await apiService.updateBlog(localBlogId, {
+          estado: "reviewed_ai",
+          estructura_blog_json:
+            errores.length > 0
+              ? aplicarResaltadoErrores(tablaEstructuraFinal, errores)
+              : tablaEstructuraFinal,
+        });
+      } catch (persistErr) {
+        console.error("No se pudo persistir el nuevo estado:", persistErr);
+      }
+    } catch (error) {
+      console.error("Error en revisión IA:", error);
+      showToast(
+        `Error al revisar con IA: ${error?.message || "intenta nuevamente."}`,
+        "error"
+      );
+    } finally {
+      setRevisandoIA(false);
+    }
+  }, [
+    localBlogId,
+    tablaEstructuraFinal,
+    revisandoIA,
+    aplicarResaltadoErrores,
+    markAsChanged,
+  ]);
 
   // 3. Lógica principal de Guardado de la estructura (POST/PUT)
   const guardarArticulo = useCallback(async () => {
@@ -3670,6 +3767,37 @@ const GeneracionBlog = () => {
                   ) : (
                     <>
                       <i className="uil uil-save"></i>Guardar Estructura
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+
+            {/* --- BOTÓN DE REVISIÓN ORTOGRÁFICA POR IA --- */}
+            {(resultadosDisponibles || tablaEstructuraFinal) && (
+              <div
+                style={{
+                  marginBottom: "15px",
+                  display: "flex",
+                  gap: "10px",
+                }}
+              >
+                <button
+                  onClick={revisarConIA}
+                  className="btn-revisar-ia"
+                  disabled={
+                    !localBlogId || !tablaEstructuraFinal || revisandoIA || cargandoIA
+                  }
+                  title="La IA revisará el contenido y resaltará en amarillo los errores ortográficos detectados."
+                  style={{ flex: 1 }}
+                >
+                  {revisandoIA ? (
+                    <>
+                      <i className="uil uil-spinner uil-spin"></i> Revisando con IA…
+                    </>
+                  ) : (
+                    <>
+                      <i className="uil uil-spell-check"></i> Revisar con IA
                     </>
                   )}
                 </button>
