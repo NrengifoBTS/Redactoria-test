@@ -256,11 +256,12 @@ const LinkPopover = ({ editor }) => {
   const [url, setUrl] = useState("");
 
   // Sincronizar el input con el link actual del editor
+  const linkHref = editor?.getAttributes("link").href;
   useEffect(() => {
     if (editor) {
-      setUrl(editor.getAttributes("link").href || "");
+      setUrl(linkHref || "");
     }
-  }, [editor?.getAttributes("link").href]);
+  }, [editor, linkHref]);
 
   if (!editor) return null;
 
@@ -343,7 +344,7 @@ const GeneracionBlog = () => {
   const [listaUrls, setListaUrls] = useState(["", "", ""]);
   const [estadosUrls, setEstadosUrls] = useState({});
   const [revisandoIA, setRevisandoIA] = useState(false);
-  const [erroresRevisionIA, setErroresRevisionIA] = useState([]);
+  const [, setErroresRevisionIA] = useState([]);
 
   const { user: currentUser } = useCurrentUser();
 
@@ -492,7 +493,7 @@ const GeneracionBlog = () => {
   // ESTADOS PARA PREGUNTAS FRECUENTES
   // =======================================================================
   const [faqKeyword, setFaqKeyword] = useState("");
-  const [googleFaqs, setGoogleFaqs] = useState([]);
+  const [, setGoogleFaqs] = useState([]);
   const [loadingFaqs, setLoadingFaqs] = useState(false);
 
   // CORRECCIÓN: Usar datosFinales que es tu estado real
@@ -756,15 +757,12 @@ const GeneracionBlog = () => {
   //    (Toast, Markdown Parser/Writer, Toggle de UI)
   // =======================================================================
 
-  //Muestra una notificación temporal.
-  const showToast = (message, type = "info") => {
+  const showToast = useCallback((message, type = "info") => {
     setToast({ message, type });
-
-    // Ocultar el toast después de 3 segundos
     setTimeout(() => {
       setToast(null);
     }, 3000);
-  };
+  }, []);
 
   // 2. Función para marcar que algo ha cambiado (activa el botón de guardar)
   const markAsChanged = useCallback(() => {
@@ -866,6 +864,7 @@ const GeneracionBlog = () => {
     revisandoIA,
     aplicarResaltadoErrores,
     markAsChanged,
+    showToast,
   ]);
 
   // 3. Lógica principal de Guardado de la estructura (POST/PUT)
@@ -944,7 +943,8 @@ const GeneracionBlog = () => {
     blogPriority,
     TotalGeneratedWords,
     isSaving,
-    datosFinales, // Añadido a dependencias para el H1
+    datosFinales,
+    showToast,
   ]);
 
   // Visibilidad de tarjetas en el front
@@ -1345,20 +1345,15 @@ const GeneracionBlog = () => {
     return structure;
   };
 
-  const recalcularPalabrasGeneradas = (estructura) => {
+  const recalcularPalabrasGeneradas = useCallback((estructura) => {
     let conteo = 0;
     if (!estructura || !Array.isArray(estructura)) return 0;
 
     const procesarItem = (item) => {
-      // 1. Contar palabras del título (text)
       conteo += contarPalabras(item.text || "");
-
-      // 2. Contar palabras del contenido (content)
       if (item.content) {
         conteo += contarPalabras(item.content);
       }
-
-      // 3. Procesar hijos si existen
       if (item.children && item.children.length > 0) {
         item.children.forEach(procesarItem);
       }
@@ -1367,7 +1362,7 @@ const GeneracionBlog = () => {
     estructura.forEach(procesarItem);
     console.log("📊 Conteo Total Realizado:", conteo);
     return conteo;
-  };
+  }, [contarPalabras]);
 
   //Cuenta el total de h2 y h3 en la estructura
   const contarTotalSubsecciones = (estructura) => {
@@ -1514,7 +1509,7 @@ const GeneracionBlog = () => {
     });
 
     return structureArray.map(processLevel);
-  }, [tablaEstructuraFinal]);
+  }, [tablaEstructuraFinal, contarPalabras]);
 
   // 2. EN LUGAR DE CREAR UNA CONSTANTE, USA EL SETTER DEL ESTADO
   // Aprovechamos el useMemo o un useEffect que ya tengas para actualizar el valor
@@ -1522,7 +1517,7 @@ const GeneracionBlog = () => {
     const total = recalcularPalabrasGeneradas(structureWithCount);
     // ACTUALIZAMOS TU ESTADO (El que usas en el botón de guardar)
     setTotalGeneratedWords(total);
-  }, [structureWithCount]);
+  }, [structureWithCount, recalcularPalabrasGeneradas]);
   // ==============================================================================================================================================
   // 8. FUNCIONES DE MANEJO DE ESTRUCTURA Y EDICIÓN LOCAL
   //    (Selección, Guardar Título/Contenido, Mover, Eliminar, Agregar)
@@ -2608,11 +2603,6 @@ const GeneracionBlog = () => {
             .map((k) => k.trim())
             .filter((k) => k)
         : [];
-
-    // 2. Asegurar que las keywords de la sección sean un Array
-    const sectionKeywords = Array.isArray(selectedSectionForRegen?.keywords)
-      ? selectedSectionForRegen.keywords
-      : [];
 
     const finalContextData = contextData.length > 50 ? contextData : "";
     const blogId = datosFinales.id;
