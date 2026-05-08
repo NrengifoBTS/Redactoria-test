@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 from uuid import UUID
 from sqlalchemy.orm import Session
 from typing import Dict, Any, List
@@ -13,6 +14,12 @@ import traceback
 
 class IAService:
     """Servicio para manejar generación de contenido IA y traducción"""
+
+    _PRIMARY_KW_PATTERN = re.compile(r"\b(?:alquil\w*|rent\w*)\b", re.IGNORECASE)
+    _PRIMARY_KW_ALLOWED_FIELDS = re.compile(
+        r"^(tit(?:_\d+)?|titulo|h2|h2_desc|desc(?:_h[23])?|desc(?:_\d+)?|faq_\d+|ip_usa|ip_bra)$",
+        re.IGNORECASE,
+    )
     
     # Mapeo de bloques a métodos del generador
     BLOCK_METHODS = {
@@ -80,13 +87,61 @@ class IAService:
         text = text.replace('&gt;', '>')
         text = text.replace('&quot;', '"')
         
-        # Limpiar espacios múltiples
-        text = re.sub(r'\s+', ' ', text)
-        
+        # Limpiar espacios múltiples (preservar saltos de línea)
+        text = re.sub(r'[^\S\n]+', ' ', text)
+        text = re.sub(r'\n{3,}', '\n\n', text)
+
         # Limpiar espacios al inicio y final
         text = text.strip()
         
         return text
+
+    @staticmethod
+    def _preserve_case(replacement: str, original: str) -> str:
+        if original.isupper():
+            return replacement.upper()
+        if original[:1].isupper():
+            return replacement.capitalize()
+        return replacement
+
+    @staticmethod
+    def _limit_primary_keyword_mentions(text: str, max_mentions: int = 1) -> str:
+        """Limita menciones de la familia alquila/renta a maximo 1 por campo."""
+        if not text or max_mentions < 0:
+            return text
+
+        mentions = 0
+        replacement_idx = 0
+        alternatives = ("reserva", "compara", "elige", "viaja")
+
+        def _replace(match: re.Match) -> str:
+            nonlocal mentions, replacement_idx
+            mentions += 1
+            if mentions <= max_mentions:
+                return match.group(0)
+
+            alt = alternatives[replacement_idx % len(alternatives)]
+            replacement_idx += 1
+            return IAService._preserve_case(alt, match.group(0))
+
+        limited = IAService._PRIMARY_KW_PATTERN.sub(_replace, text)
+        return re.sub(r"\s{2,}", " ", limited).strip()
+
+    @staticmethod
+    def _enforce_primary_keyword_policy(structured_content: Dict[str, Any]) -> Dict[str, Any]:
+        """Aplica politica de keyword principal por seccion para H2/H3 y descripciones."""
+        if not structured_content:
+            return structured_content
+
+        for key, value in list(structured_content.items()):
+            if not isinstance(value, str):
+                continue
+            if key.startswith("q_"):
+                continue
+            if IAService._PRIMARY_KW_ALLOWED_FIELDS.match(key):
+                structured_content[key] = IAService._limit_primary_keyword_mentions(value, max_mentions=1)
+
+        return structured_content
 
     @staticmethod
     def process_llm_response(raw_content: str, block_type: str) -> Dict[str, Any]:
@@ -293,6 +348,12 @@ class IAService:
                 if not result["structured_content"].get("tit"):
                     result["structured_content"]["tit"] = extracted_fields["tit"]
 
+            # Regla global: maximo 1 mención de alquila/renta por campo en secciones.
+            if "structured_content" in result:
+                result["structured_content"] = IAService._enforce_primary_keyword_policy(
+                    result["structured_content"]
+                )
+
             # Agregar información adicional útil para el frontend
             result["frontend_ready"] = {
                 "has_think": bool(think_content),
@@ -476,16 +537,11 @@ class IAService:
 
                 elif block_type == "car_rental" or block_type == "fleetcarrusel":
                     raw_generated_content = generator.generate_car_rental(titulo_limpio, nuevo_tema)
+                    _STANDARD_CAR_TYPES = ["Económico", "Camionetas", "Convertibles", "Lujo", "Van", "Eléctricos"]
                     tipos_validos = [t for t in (request.car_types or []) if t and t.strip()]
                     logging.info(f"CAR_TYPES recibidos: {tipos_validos}")
                     if not tipos_validos:
-                        if block_type == "fleetcarrusel":
-                            tipos_validos = ["Económico", "Camionetas", "Convertibles", "Lujo", "Van", "Eléctricos"]
-                        else:
-                            tipos_validos = [
-                                "Auto Económico", "Auto Compacto", "Auto Intermedio",
-                                "SUV", "Van", "Auto de Lujo"
-                            ]
+                        tipos_validos = _STANDARD_CAR_TYPES
                     additional_content = generator.generate_car_type(tipos_validos, nuevo_tema)
 
                 elif block_type == "fav_city" or block_type == "locationscarrusel":
@@ -540,12 +596,31 @@ class IAService:
                 try:
                     additional_processed = IAService.process_llm_response(additional_content, f"{block_type}_additional")
                     
-                    if additional_processed and additional_processed.get("processed_fields"):
-                        # Combinar campos del contenido adicional con el principal
-                        processed_response["structured_content"].update(additional_processed["processed_fields"])
-                        processed_response["frontend_ready"]["available_fields"].extend(additional_processed["frontend_ready"]["available_fields"])
-                        processed_response["frontend_ready"]["field_count"] += additional_processed["frontend_ready"]["field_count"]
-                        processed_response["frontend_ready"]["content_preview"].update(additional_processed["frontend_ready"]["content_preview"])
+                    if additional_processed:
+                        # Priorizar structured_content del bloque adicional y usar processed_fields como respaldo.
+                        additional_fields = (
+                            additional_processed.get("structured_content")
+                            or additional_processed.get("processed_fields")
+                            or {}
+                        )
+                        if additional_fields:
+                            processed_response["structured_content"].update(additional_fields)
+
+                            available = list(additional_processed.get("frontend_ready", {}).get("available_fields", []))
+                            preview = dict(additional_processed.get("frontend_ready", {}).get("content_preview", {}))
+                            for key in additional_fields.keys():
+                                if key not in available:
+                                    available.append(key)
+                                if key not in preview:
+                                    val = additional_fields.get(key, "")
+                                    preview[key] = val[:100] + "..." if isinstance(val, str) and len(val) > 100 else (val or "")
+
+                            merged_available = list(dict.fromkeys(
+                                processed_response["frontend_ready"].get("available_fields", []) + available
+                            ))
+                            processed_response["frontend_ready"]["available_fields"] = merged_available
+                            processed_response["frontend_ready"]["field_count"] = len(merged_available)
+                            processed_response["frontend_ready"]["content_preview"].update(preview)
                     
                 except Exception as e:
                     logging.error(f"Error en proceso adicional: {str(e)}")

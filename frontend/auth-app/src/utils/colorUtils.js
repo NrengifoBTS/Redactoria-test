@@ -29,6 +29,8 @@ const BENEFICIOS_BRA   = 'Seguro de Viaje Gratis para extranjeros, Kilómetros I
 
 // Beneficios alternativos que puede generar el LLM para MCR IP_USA
 const BENEFICIOS_USA_MCR = 'Kilómetros Ilimitados, Asistencia Básica en Carretera, Modificaciones sin cargos administrativos';
+// Beneficios VJM IP_USA (cargue masivo): incluye Conductor Adicional sin Costo extra
+const BENEFICIOS_USA_VJM = 'Kilómetros Ilimitados, Conductor Adicional sin Costo extra, Asistencia Básica en Carretera, Modificaciones sin cargos administrativos';
 
 // ── Patrones de colorización ─────────────────────────────────────────────────
 
@@ -61,6 +63,12 @@ const VJM_PATTERNS = [
 function spanWrap(match, color, bold) {
   const escaped = match.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const style = `color:${color};font-weight:${bold ? 'bold' : 'normal'}`;
+  return `<span style="${style}">${escaped}</span>`;
+}
+
+function spanWrapUnderline(match, color, bold) {
+  const escaped = match.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const style = `color:${color};font-weight:${bold ? 'bold' : 'normal'};text-decoration:underline`;
   return `<span style="${style}">${escaped}</span>`;
 }
 
@@ -116,11 +124,27 @@ export function colorizeFleetIp(ipText, baseText, brand) {
 
   let result = ipText;
 
-  // Colorizar el bloque de beneficios USA (sin seguro de viaje, con IOF no aplica)
-  if (result.includes(BENEFICIOS_USA)) {
-    result = result.replace(BENEFICIOS_USA, (m) => spanWrap(m, purpleColor, purpleBold));
-  } else if (result.includes(BENEFICIOS_USA_MCR)) {
-    result = result.replace(BENEFICIOS_USA_MCR, (m) => spanWrap(m, purpleColor, purpleBold));
+  if (brand === 'mcr') {
+    // MCR: colorizar el bloque completo de beneficios IP en morado
+    if (result.includes(BENEFICIOS_USA)) {
+      result = result.replace(BENEFICIOS_USA, (m) => spanWrap(m, purpleColor, purpleBold));
+    } else if (result.includes(BENEFICIOS_USA_VJM)) {
+      result = result.replace(BENEFICIOS_USA_VJM, (m) => spanWrap(m, purpleColor, purpleBold));
+    } else if (result.includes(BENEFICIOS_USA_MCR)) {
+      result = result.replace(BENEFICIOS_USA_MCR, (m) => spanWrap(m, purpleColor, purpleBold));
+    }
+  } else {
+    // VJM: colorizar solo los beneficios exclusivos de Viajemos
+    // "Conductor Adicional sin Costo extra" → morado (exclusivo vs MCR IP USA y LATAM)
+    result = result.replace(
+      /Conductor Adicional sin Costo extra/gi,
+      (m) => spanWrap(m, VJM_PURPLE, true),
+    );
+    // "Promociones Exclusivas hasta el X%" → azul con subrayado (exclusivo de Viajemos)
+    result = result.replace(
+      /Promociones?\s+Exclusivas?\s+hasta\s+el\s+\d+%/gi,
+      (m) => spanWrapUnderline(m, VJM_BLUE, true),
+    );
   }
 
   // Colorizar el extra del BRA: "Beneficio en Cobertura del IOF"

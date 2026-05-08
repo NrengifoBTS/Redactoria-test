@@ -1019,6 +1019,37 @@ export default function Redactor() {
     return !!findMergeOrigin(row, col);
   };
 
+  const getFavCityMissingDescInfo = (block, structuredContent = {}) => {
+    if (!block || block.type !== "fav_city") {
+      return { hasIssue: false, missingDescFields: [] };
+    }
+
+    const expectedDescFields = Object.keys(block.contentMapping || {}).filter(
+      (field) => field.startsWith("desc_") && field !== "desc",
+    );
+
+    const missingDescFields = expectedDescFields.filter((field) => {
+      const value = structuredContent[field];
+      return value === undefined || String(value).trim() === "";
+    });
+
+    const hasAnyTitle = Object.keys(structuredContent).some((field) => {
+      if (!field.startsWith("tit_")) {
+        return false;
+      }
+      const value = structuredContent[field];
+      return value !== undefined && String(value).trim() !== "";
+    });
+
+    return {
+      hasIssue:
+        hasAnyTitle &&
+        expectedDescFields.length > 0 &&
+        missingDescFields.length > 0,
+      missingDescFields,
+    };
+  };
+
   const getBlockTitleContent = (blockInfo, tableData) => {
     if (!blockInfo) return "";
 
@@ -1328,6 +1359,21 @@ export default function Redactor() {
 
         // Actualizar tableData con el contenido generado
         if (generatedContent?.structured_content) {
+          const favCityDescCheck = getFavCityMissingDescInfo(
+            block,
+            generatedContent.structured_content,
+          );
+          if (favCityDescCheck.hasIssue) {
+            console.warn(
+              "⚠️ Favorite Cities sin descripciones en structured_content:",
+              {
+                blockNumber: block.number,
+                missingDescFields: favCityDescCheck.missingDescFields,
+                receivedKeys: Object.keys(generatedContent.structured_content),
+              },
+            );
+          }
+
           const brand = currentTemplate?.proyecto || "mcr";
           const baseDesc = generatedContent.structured_content["desc"] || "";
           setTableData((prev) => {
@@ -3221,8 +3267,9 @@ export default function Redactor() {
 
                     const existingContent =
                       tableData[descriptionCellKey]?.content || "";
+                    const hasExistingContent = existingContent.trim() !== "";
 
-                    if (existingContent.trim() !== "") {
+                    if (hasExistingContent) {
                       const confirmReplace = window.confirm(
                         `Ya existe contenido en esta celda.\n\n¿Quieres reemplazarlo con nuevo contenido generado por IA?`,
                       );
@@ -3241,7 +3288,7 @@ export default function Redactor() {
                     button.disabled = true;
                     button.style.cursor = "not-allowed";
 
-                    if (existingContent.trim() !== "") {
+                    if (hasExistingContent) {
                       setTableData((prev) => ({
                         ...prev,
                         [descriptionCellKey]: {
@@ -3270,11 +3317,37 @@ export default function Redactor() {
                         const blockKey = String(blockNumber);
                         const meta = blocksMetadata[blockKey];
 
+                        const favCityDescCheck = getFavCityMissingDescInfo(
+                          meta,
+                          content?.structured_content || {},
+                        );
+                        if (favCityDescCheck.hasIssue) {
+                          console.warn(
+                            "⚠️ Favorite Cities sin descripciones en structured_content:",
+                            {
+                              blockNumber,
+                              missingDescFields:
+                                favCityDescCheck.missingDescFields,
+                              receivedKeys: Object.keys(
+                                content?.structured_content || {},
+                              ),
+                            },
+                          );
+                        }
+
                         if (!meta || !meta.contentMapping) {
                           console.warn(
                             `❌ No hay metadata o contentMapping para el bloque ${blockNumber}`,
                           );
                           return updates;
+                        }
+
+                        // En regeneración, limpiar todo el bloque antes de aplicar el nuevo contenido
+                        // para evitar mezclar texto viejo cuando el LLM omite algún campo.
+                        if (hasExistingContent) {
+                          Object.values(meta.contentMapping).forEach((mappedCellKey) => {
+                            updates[mappedCellKey] = { content: "" };
+                          });
                         }
 
                         Object.entries(meta.contentMapping).forEach(
@@ -3346,6 +3419,19 @@ export default function Redactor() {
                             }
 
                             if (contentValue !== undefined) {
+                              let itemTitleValue = null;
+                              if (
+                                field.startsWith("desc_") ||
+                                field.startsWith("faq_")
+                              ) {
+                                const index = field
+                                  .replace("desc_", "")
+                                  .replace("faq_", "");
+                                itemTitleValue =
+                                  content.structured_content[`q_${index}`] ||
+                                  content.structured_content[`tit_${index}`];
+                              }
+
                               const colorized = colorizeField(
                                 field,
                                 contentValue,
@@ -3354,38 +3440,27 @@ export default function Redactor() {
                               );
                               if (!colorized) {
                                 console.log(
-                                  `⚠️ Campo '${field}' generó valor vacío — celda ${cellKey} sin cambios`,
+                                  `⚠️ Campo '${field}' llegó vacío — limpiando celda ${cellKey}`,
                                 );
+                                updates[cellKey] = { content: "" };
                               } else {
                                 console.log(
                                   `✅ Actualizando celda ${cellKey} con contenido`,
                                 );
                                 updates[cellKey] = { content: colorized };
+                              }
 
-                                // Para FAQ/Favorite Cities: actualizar título H3 en la fila anterior
-                                if (
-                                  field.startsWith("desc_") ||
-                                  field.startsWith("faq_")
-                                ) {
-                                  const index = field
-                                    .replace("desc_", "")
-                                    .replace("faq_", "");
-                                  const titleValue =
-                                    content.structured_content[`q_${index}`] ||
-                                    content.structured_content[`tit_${index}`];
-                                  if (titleValue) {
-                                    const [respRow] = cellKey
-                                      .split("-")
-                                      .map(Number);
-                                    const titleCellKey = `${respRow - 1}-3`;
-                                    updates[titleCellKey] = {
-                                      content: titleValue,
-                                    };
-                                    console.log(
-                                      `✅ Actualizando título de item ${titleCellKey} con: ${titleValue}`,
-                                    );
-                                  }
-                                }
+                              // Para FAQ/Favorite Cities: actualizar título H3 en la fila anterior
+                              // aunque la descripción haya llegado vacía.
+                              if (itemTitleValue) {
+                                const [respRow] = cellKey.split("-").map(Number);
+                                const titleCellKey = `${respRow - 1}-3`;
+                                updates[titleCellKey] = {
+                                  content: itemTitleValue,
+                                };
+                                console.log(
+                                  `✅ Actualizando título de item ${titleCellKey} con: ${itemTitleValue}`,
+                                );
                               }
                             } else {
                               console.log(
@@ -3420,6 +3495,16 @@ export default function Redactor() {
                       });
                     };
                     updateTableDataByBlock(block.number, generatedContent);
+
+                    const favCityDescCheck = getFavCityMissingDescInfo(
+                      block,
+                      generatedContent?.structured_content || {},
+                    );
+                    if (favCityDescCheck.hasIssue) {
+                      alert(
+                        "La IA devolvio titulos de ciudades pero no devolvio algunas descripciones. Revisa el backend/LLM (structured_content sin desc_i).",
+                      );
+                    }
 
                     // auto-save silencioso tras generación IA individual
                     saveRedactorProgress(currentLP.id, tableDataRef.current, annotations)

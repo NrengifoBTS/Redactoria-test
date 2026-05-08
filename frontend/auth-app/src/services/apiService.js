@@ -548,6 +548,9 @@ class ApiService {
         ? backendData.last_modified.split("T")[0]
         : null,
       updatedAt: backendData.updated_at,
+      assignedAt: backendData.assigned_at
+        ? backendData.assigned_at.split("T")[0]
+        : null,
 
       // Campos calculados para el frontend
       progress: this.calculateProgress(backendData.estado),
