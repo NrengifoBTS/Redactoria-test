@@ -4,6 +4,7 @@ import { useApp } from "./context/AppContext";
 import LoginModal from "./Loginmodal";
 import ProyectoModal from "./ProyectoModal";
 import "./Home.css";
+import milesLogo from "./img/Miles-car-rental.png";
 
 const Home = () => {
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
@@ -47,7 +48,7 @@ const Home = () => {
       titulo: "Redactoria MCR",
       descripcion:
         "Sistema de redacción y gestión de contenido con IA integrada para generación automática de landings pages",
-      imagen: "https://milescdnver.azureedge.net/build/images/logo/logo.svg",
+      imagen: milesLogo,
       links: [
         {
           nombre: "Dashboard Landings Pages",
@@ -189,7 +190,7 @@ const Home = () => {
   const empresasClientes = [
     {
       nombre: "MCR",
-      logo: "https://milescdnver.azureedge.net/build/images/logo/logo.svg",
+      logo: milesLogo,
       url: "https://www.milescarrental.com",
       redes: [
         {
