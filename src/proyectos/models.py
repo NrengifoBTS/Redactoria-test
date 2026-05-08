@@ -10,6 +10,7 @@ class EstadoProyecto(str, Enum):
     IN_PROGRESS = "in_progress"
     PEN_REVIEW = "pen_review"
     PEN_AJUSTE = "pen_ajuste"
+    AJUSTE_APLICADO = "ajuste_aplicado"
     APPROVED = "approved"
     REV_KWS = "rev_kws"
     CARGUE = "cargue"
@@ -48,7 +49,8 @@ class ProyectoResponse(ProyectoBase):
     created_at: datetime
     updated_at: Optional[datetime] = None
     last_modified: datetime
-    
+    assigned_at: Optional[datetime] = None
+
     model_config = ConfigDict(from_attributes=True)
 
 # Modelos para requests específicos

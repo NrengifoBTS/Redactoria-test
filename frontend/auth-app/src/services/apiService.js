@@ -6,6 +6,7 @@ class ApiService {
     this.baseURL = API_BASE_URL;
   }
 
+
   // Configurar headers comunes
   getHeaders() {
     const headers = {
@@ -359,16 +360,12 @@ class ApiService {
         tit: blockTitle,
         tema,
         lpId,
+        brand: templateInfo?.proyecto || "mcr",
         faqQuestions,
         favCityQuestions,
       };
 
-      // Agregar info del template si existe
-      if (templateInfo) {
-        payload.template_proyecto = templateInfo.proyecto;
-        payload.template_dominio = templateInfo.dominio;
-        payload.template_categoria = templateInfo.categoria;
-      } else {
+      if (!templateInfo) {
         console.warn("No hay templateInfo");
       }
 
@@ -552,6 +549,9 @@ class ApiService {
         ? backendData.last_modified.split("T")[0]
         : null,
       updatedAt: backendData.updated_at,
+      assignedAt: backendData.assigned_at
+        ? backendData.assigned_at.split("T")[0]
+        : null,
 
       // Campos calculados para el frontend
       progress: this.calculateProgress(backendData.estado),
@@ -569,6 +569,7 @@ class ApiService {
       published: "published",
       pen_review: "pen_review",
       pen_ajuste: "pen_ajuste",
+      ajuste_aplicado: "ajuste_aplicado",
       approved: "approved",
       rev_kws: "rev_kws",
       cargue: "cargue",
@@ -586,6 +587,7 @@ class ApiService {
       published: "completed",
       pen_review: "pen_review",
       pen_ajuste: "pen_ajuste",
+      ajuste_aplicado: "ajuste_aplicado",
       approved: "approved",
       rev_kws: "rev_kws",
       cargue: "cargue",
@@ -1022,6 +1024,19 @@ class ApiService {
       }
       throw error;
     }
+  }
+
+  /**
+   * Revisar ortografía del blog con IA (OpenAI).
+   * Devuelve { blog_id, errors: [{wrong, correct, reason}], checked_chars }.
+   * No modifica el blog en la DB; el frontend resalta los errores y se
+   * marca el blog como "Revisado con IA".
+   */
+  async reviewBlogWithAI(blogId) {
+    const response = await this.makeRequest(`/blogs/${blogId}/review-ia`, {
+      method: "POST",
+    });
+    return response;
   }
 
   /**

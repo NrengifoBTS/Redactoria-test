@@ -1,0 +1,47 @@
+# Entornos
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# IDEs
+.vscode/
+.idea/
+
+# Variables de entorno
+.env
+
+# Credenciales y datos sensibles
+Usuarios.txt
+*.txt.bak
+
+# Bases de datos locales / fixtures
+test.db
+*.db
+*.sqlite
+*.sqlite3
+
+# Datasets / dumps
+dataset_full_context.csv
+dataset_*.csv
+*.dump
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Archivos de datos grandes / temporal / backups
+dataset_structured.csv
+Cargue-Masivo-de-Contenido-main.zip
+Cargue-Masivo-de-Contenido-main/
+*.sql
+*.rar
+
+# Jupyter
+*.ipynb_checkpoints
+
+.gitnore

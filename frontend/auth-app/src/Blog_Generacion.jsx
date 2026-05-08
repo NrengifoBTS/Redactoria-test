@@ -256,11 +256,12 @@ const LinkPopover = ({ editor }) => {
   const [url, setUrl] = useState("");
 
   // Sincronizar el input con el link actual del editor
+  const linkHref = editor?.getAttributes("link").href;
   useEffect(() => {
     if (editor) {
-      setUrl(editor.getAttributes("link").href || "");
+      setUrl(linkHref || "");
     }
-  }, [editor?.getAttributes("link").href]);
+  }, [editor, linkHref]);
 
   if (!editor) return null;
 
@@ -342,6 +343,8 @@ const GeneracionBlog = () => {
   const [, setTempContentUpdate] = useState(null);
   const [listaUrls, setListaUrls] = useState(["", "", ""]);
   const [estadosUrls, setEstadosUrls] = useState({});
+  const [revisandoIA, setRevisandoIA] = useState(false);
+  const [, setErroresRevisionIA] = useState([]);
 
   const { user: currentUser } = useCurrentUser();
 
@@ -490,7 +493,7 @@ const GeneracionBlog = () => {
   // ESTADOS PARA PREGUNTAS FRECUENTES
   // =======================================================================
   const [faqKeyword, setFaqKeyword] = useState("");
-  const [googleFaqs, setGoogleFaqs] = useState([]);
+  const [, setGoogleFaqs] = useState([]);
   const [loadingFaqs, setLoadingFaqs] = useState(false);
 
   // CORRECCIÓN: Usar datosFinales que es tu estado real
@@ -754,15 +757,12 @@ const GeneracionBlog = () => {
   //    (Toast, Markdown Parser/Writer, Toggle de UI)
   // =======================================================================
 
-  //Muestra una notificación temporal.
-  const showToast = (message, type = "info") => {
+  const showToast = useCallback((message, type = "info") => {
     setToast({ message, type });
-
-    // Ocultar el toast después de 3 segundos
     setTimeout(() => {
       setToast(null);
     }, 3000);
-  };
+  }, []);
 
   // 2. Función para marcar que algo ha cambiado (activa el botón de guardar)
   const markAsChanged = useCallback(() => {
@@ -770,6 +770,102 @@ const GeneracionBlog = () => {
       setHasUnsavedChanges(true);
     }
   }, [hasUnsavedChanges]);
+
+  // ───────────────────────────────────────────────────────────────────────
+  // REVISIÓN ORTOGRÁFICA POR IA (OpenAI)
+  // ───────────────────────────────────────────────────────────────────────
+
+  // Inserta <mark class="ia-spell-error"> alrededor de cada palabra/expresión
+  // detectada como error ortográfico, sin alterar las marcas de estructura
+  // del Markdown ([H1 - 0.0], [CONTENIDO], [MULTIMEDIA: ...]).
+  const aplicarResaltadoErrores = useCallback((markdown, errores) => {
+    if (!markdown || !errores?.length) return markdown;
+
+    const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const esPalabraSimple = (s) => /^[\wÁÉÍÓÚÜÑáéíóúüñ\-']+$/u.test(s);
+
+    let resultado = markdown;
+    for (const err of errores) {
+      const wrong = err.wrong || "";
+      const correct = err.correct || "";
+      const reason = err.reason || "ortografía";
+      if (!wrong || wrong === correct) continue;
+
+      const titleAttr = `Sugerencia: ${correct} (${reason})`
+        .replace(/"/g, "&quot;");
+      const replacement =
+        `<mark class="ia-spell-error" data-correct="${correct.replace(/"/g, "&quot;")}" ` +
+        `title="${titleAttr}">${wrong}</mark>`;
+
+      // Si es palabra simple usamos word boundaries; si lleva espacios o
+      // signos, hacemos match literal.
+      const pattern = esPalabraSimple(wrong)
+        ? new RegExp(`(?<![\\wÁÉÍÓÚÜÑáéíóúüñ])${escapeRegex(wrong)}(?![\\wÁÉÍÓÚÜÑáéíóúüñ])`, "g")
+        : new RegExp(escapeRegex(wrong), "g");
+
+      // Evitamos volver a envolver una ocurrencia ya marcada.
+      resultado = resultado.replace(pattern, (match, offset, full) => {
+        const before = full.slice(Math.max(0, offset - 40), offset);
+        if (/<mark class="ia-spell-error"[^>]*>[^<]*$/.test(before)) {
+          return match;
+        }
+        return replacement;
+      });
+    }
+    return resultado;
+  }, []);
+
+  // Handler del botón "Revisar con IA"
+  const revisarConIA = useCallback(async () => {
+    if (!localBlogId || !tablaEstructuraFinal || revisandoIA) return;
+    setRevisandoIA(true);
+    try {
+      const data = await apiService.reviewBlogWithAI(localBlogId);
+      const errores = Array.isArray(data?.errors) ? data.errors : [];
+
+      if (errores.length === 0) {
+        showToast("Revisión completada: no se detectaron errores ortográficos.", "success");
+      } else {
+        const nuevoMarkdown = aplicarResaltadoErrores(tablaEstructuraFinal, errores);
+        setTablaEstructuraFinal(nuevoMarkdown);
+        setErroresRevisionIA(errores);
+        markAsChanged();
+        showToast(
+          `Revisión completada: ${errores.length} ${errores.length === 1 ? "error detectado" : "errores detectados"} y resaltados en amarillo.`,
+          "success"
+        );
+      }
+
+      // Pasar el blog a estado "Revisado con IA"
+      setBlogStatus("reviewed_ai");
+      try {
+        await apiService.updateBlog(localBlogId, {
+          estado: "reviewed_ai",
+          estructura_blog_json:
+            errores.length > 0
+              ? aplicarResaltadoErrores(tablaEstructuraFinal, errores)
+              : tablaEstructuraFinal,
+        });
+      } catch (persistErr) {
+        console.error("No se pudo persistir el nuevo estado:", persistErr);
+      }
+    } catch (error) {
+      console.error("Error en revisión IA:", error);
+      showToast(
+        `Error al revisar con IA: ${error?.message || "intenta nuevamente."}`,
+        "error"
+      );
+    } finally {
+      setRevisandoIA(false);
+    }
+  }, [
+    localBlogId,
+    tablaEstructuraFinal,
+    revisandoIA,
+    aplicarResaltadoErrores,
+    markAsChanged,
+    showToast,
+  ]);
 
   // 3. Lógica principal de Guardado de la estructura (POST/PUT)
   const guardarArticulo = useCallback(async () => {
@@ -847,7 +943,8 @@ const GeneracionBlog = () => {
     blogPriority,
     TotalGeneratedWords,
     isSaving,
-    datosFinales, // Añadido a dependencias para el H1
+    datosFinales,
+    showToast,
   ]);
 
   // Visibilidad de tarjetas en el front
@@ -1248,20 +1345,15 @@ const GeneracionBlog = () => {
     return structure;
   };
 
-  const recalcularPalabrasGeneradas = (estructura) => {
+  const recalcularPalabrasGeneradas = useCallback((estructura) => {
     let conteo = 0;
     if (!estructura || !Array.isArray(estructura)) return 0;
 
     const procesarItem = (item) => {
-      // 1. Contar palabras del título (text)
       conteo += contarPalabras(item.text || "");
-
-      // 2. Contar palabras del contenido (content)
       if (item.content) {
         conteo += contarPalabras(item.content);
       }
-
-      // 3. Procesar hijos si existen
       if (item.children && item.children.length > 0) {
         item.children.forEach(procesarItem);
       }
@@ -1270,7 +1362,7 @@ const GeneracionBlog = () => {
     estructura.forEach(procesarItem);
     console.log("📊 Conteo Total Realizado:", conteo);
     return conteo;
-  };
+  }, [contarPalabras]);
 
   //Cuenta el total de h2 y h3 en la estructura
   const contarTotalSubsecciones = (estructura) => {
@@ -1417,7 +1509,7 @@ const GeneracionBlog = () => {
     });
 
     return structureArray.map(processLevel);
-  }, [tablaEstructuraFinal]);
+  }, [tablaEstructuraFinal, contarPalabras]);
 
   // 2. EN LUGAR DE CREAR UNA CONSTANTE, USA EL SETTER DEL ESTADO
   // Aprovechamos el useMemo o un useEffect que ya tengas para actualizar el valor
@@ -1425,7 +1517,7 @@ const GeneracionBlog = () => {
     const total = recalcularPalabrasGeneradas(structureWithCount);
     // ACTUALIZAMOS TU ESTADO (El que usas en el botón de guardar)
     setTotalGeneratedWords(total);
-  }, [structureWithCount]);
+  }, [structureWithCount, recalcularPalabrasGeneradas]);
   // ==============================================================================================================================================
   // 8. FUNCIONES DE MANEJO DE ESTRUCTURA Y EDICIÓN LOCAL
   //    (Selección, Guardar Título/Contenido, Mover, Eliminar, Agregar)
@@ -2511,11 +2603,6 @@ const GeneracionBlog = () => {
             .map((k) => k.trim())
             .filter((k) => k)
         : [];
-
-    // 2. Asegurar que las keywords de la sección sean un Array
-    const sectionKeywords = Array.isArray(selectedSectionForRegen?.keywords)
-      ? selectedSectionForRegen.keywords
-      : [];
 
     const finalContextData = contextData.length > 50 ? contextData : "";
     const blogId = datosFinales.id;
@@ -3670,6 +3757,37 @@ const GeneracionBlog = () => {
                   ) : (
                     <>
                       <i className="uil uil-save"></i>Guardar Estructura
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+
+            {/* --- BOTÓN DE REVISIÓN ORTOGRÁFICA POR IA --- */}
+            {(resultadosDisponibles || tablaEstructuraFinal) && (
+              <div
+                style={{
+                  marginBottom: "15px",
+                  display: "flex",
+                  gap: "10px",
+                }}
+              >
+                <button
+                  onClick={revisarConIA}
+                  className="btn-revisar-ia"
+                  disabled={
+                    !localBlogId || !tablaEstructuraFinal || revisandoIA || cargandoIA
+                  }
+                  title="La IA revisará el contenido y resaltará en amarillo los errores ortográficos detectados."
+                  style={{ flex: 1 }}
+                >
+                  {revisandoIA ? (
+                    <>
+                      <i className="uil uil-spinner uil-spin"></i> Revisando con IA…
+                    </>
+                  ) : (
+                    <>
+                      <i className="uil uil-spell-check"></i> Revisar con IA
                     </>
                   )}
                 </button>
