@@ -180,7 +180,7 @@ const Home = () => {
       descripcion:
         "Respuesta automatizadas con agentes IA en las diferentes redes sociales.",
       imagen: "https://cdn-icons-png.flaticon.com/512/3178/3178158.png",
-      link: "https://www.youtube.com/shorts/Ay8lynMZ4mE",
+      link: "",
       estado: "Próximamente",
       tecnologias: [""],
     },
