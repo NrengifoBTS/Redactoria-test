@@ -1316,7 +1316,18 @@ def _apply_styling(ws, template_config: models.TemplateConfig):
     except Exception as e:
         logging.warning(f"Error applying general styling: {str(e)}")
 
-def generate_filename(template_info: models.TemplateInfo) -> str:
-    """Genera un nombre de archivo apropiado"""
-    safe_name = template_info.name.replace(' ', '_').replace('/', '_')
-    return f"{safe_name}_{template_info.categoria}_{template_info.proyecto}.xlsx"
+def generate_filename(export_request: models.ExportExcelRequest) -> str:
+    """Genera el nombre del archivo con formato: DD-MM-YYYY Cargue de Contenido [Proyecto] [Ciudad]"""
+    from datetime import datetime
+    from .secciones_service import _extract_city_slug
+
+    info = export_request.template_info
+    proyecto = (info.proyecto or "").lower()
+    is_viajemos = "viajemos" in proyecto or "vjm" in proyecto
+    site_name = "Viajemos" if is_viajemos else "Miles Car Rental"
+
+    city_slug = _extract_city_slug(export_request.lp_url_slug)
+    city_name = city_slug.capitalize()
+
+    date_str = datetime.now().strftime("%d-%m-%Y")
+    return f"{date_str} Cargue de Contenido {site_name} {city_name}.xlsx"

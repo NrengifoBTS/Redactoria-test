@@ -11,6 +11,7 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
+  Cell,
 } from "recharts";
 import {
   ArrowLeft,
@@ -30,10 +31,13 @@ function Analytics() {
   const navigate = useNavigate();
   const { currentUser: user, landingPages, loading: userLoading } = useApp();
 
+  const RIA_V2_DATE = "2026-05-11";
+
   const [selectedLP, setSelectedLP] = useState(null);
-  const [selectedProyectoGeneral, setSelectedProyectoGeneral] = useState(null); // "viajemos", "mcr", etc.
+  const [selectedProyectoGeneral, setSelectedProyectoGeneral] = useState(null);
   const [selectedUser, setSelectedUser] = useState(null);
   const [timeRange, setTimeRange] = useState(30);
+  const [riaVersion, setRiaVersion] = useState(null); // null = todas, "v1" = anterior, "v2" = nueva
   const [includeAdmins, setIncludeAdmins] = useState(true);
   const [metrics, setMetrics] = useState(null);
   const [users, setUsers] = useState([]);
@@ -42,6 +46,8 @@ function Analytics() {
   const [error, setError] = useState(null);
   const [showDetails, setShowDetails] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [ria2Metrics, setRia2Metrics] = useState(null);
+  const [ria2Loading, setRia2Loading] = useState(false);
 
   // Check if user has permission
   useEffect(() => {
@@ -115,6 +121,7 @@ function Analytics() {
   useEffect(() => {
     if (user) {
       fetchMetrics();
+      fetchRia2Metrics();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -122,6 +129,7 @@ function Analytics() {
     selectedProyectoGeneral,
     selectedUser,
     timeRange,
+    riaVersion,
     includeAdmins,
     user,
   ]);
@@ -136,8 +144,15 @@ function Analytics() {
         params.append("proyecto_general", selectedProyectoGeneral);
       if (selectedLP) params.append("landing_page_id", selectedLP);
       if (selectedUser) params.append("user_id", selectedUser);
-      if (timeRange !== null) params.append("days", timeRange);
       if (!includeAdmins) params.append("exclude_admins", "true");
+
+      if (riaVersion === "v1") {
+        params.append("date_to", RIA_V2_DATE);
+      } else if (riaVersion === "v2") {
+        params.append("date_from", RIA_V2_DATE);
+      } else if (timeRange !== null) {
+        params.append("days", timeRange);
+      }
 
       const response = await apiService.get(
         `/logs/metrics?${params.toString()}`,
@@ -151,8 +166,28 @@ function Analytics() {
     }
   };
 
+  const fetchRia2Metrics = async () => {
+    try {
+      setRia2Loading(true);
+      const params = new URLSearchParams();
+      if (selectedProyectoGeneral)
+        params.append("proyecto_general", selectedProyectoGeneral);
+      if (selectedLP) params.append("landing_page_id", selectedLP);
+      if (selectedUser) params.append("user_id", selectedUser);
+      const response = await apiService.get(
+        `/logs/ria-v2-metrics?${params.toString()}`,
+      );
+      setRia2Metrics(response);
+    } catch (err) {
+      console.error("Error fetching RIA-V2 metrics:", err);
+    } finally {
+      setRia2Loading(false);
+    }
+  };
+
   const handleRefresh = () => {
     fetchMetrics();
+    fetchRia2Metrics();
   };
 
   const handleBack = () => {
@@ -210,6 +245,35 @@ function Analytics() {
       }),
       alineacion: metrics.alignment_trends[date] || 0,
     }));
+  };
+
+  const getPctColor = (pct) => {
+    if (pct === null || pct === undefined) return "#6b7280";
+    if (pct >= 0.7) return "#10b981";
+    if (pct >= 0.3) return "#f59e0b";
+    return "#ef4444";
+  };
+
+  const prepareAcceptanceDistData = () => {
+    if (!ria2Metrics?.acceptance_dist) return [];
+    const d = ria2Metrics.acceptance_dist;
+    return [
+      { nivel: "Aceptado", cantidad: d.accepted, pct: d.accepted_pct },
+      { nivel: "Modificado", cantidad: d.modified, pct: d.modified_pct },
+      { nivel: "Reescrito", cantidad: d.rewrite, pct: d.rewrite_pct },
+      { nivel: "Manual", cantidad: d.manual, pct: d.manual_pct },
+    ];
+  };
+
+  const prepareBlockPctData = () => {
+    if (!ria2Metrics?.by_block) return [];
+    return ria2Metrics.by_block
+      .filter((b) => b.avg_pct_ai_kept !== null)
+      .map((b) => ({
+        bloque: b.block_type.replace("_", " ").toUpperCase(),
+        pct_ai_kept: b.avg_pct_ai_kept,
+        guardados: b.total_saves,
+      }));
   };
 
   // Show loading while user is being fetched
@@ -459,6 +523,57 @@ function Analytics() {
             </select>
           </div>
 
+          {/* Versión RIA */}
+          <div style={{ flex: "1", minWidth: "220px" }}>
+            <label
+              style={{
+                display: "block",
+                fontSize: "12px",
+                fontWeight: "600",
+                color: "#6b7280",
+                marginBottom: "4px",
+              }}
+            >
+              Versión RIA
+            </label>
+            <div style={{ display: "flex", gap: "4px" }}>
+              {[
+                { value: null, label: "Todas" },
+                { value: "v1", label: "Anterior" },
+                { value: "v2", label: "Nueva (v2)" },
+              ].map((opt) => (
+                <button
+                  key={String(opt.value)}
+                  onClick={() => setRiaVersion(opt.value)}
+                  title={
+                    opt.value === "v1"
+                      ? `Antes del ${RIA_V2_DATE}`
+                      : opt.value === "v2"
+                        ? `Desde el ${RIA_V2_DATE}`
+                        : "Todo el historial"
+                  }
+                  style={{
+                    flex: 1,
+                    padding: "8px 4px",
+                    fontSize: "12px",
+                    fontWeight: riaVersion === opt.value ? "700" : "400",
+                    border: "1px solid",
+                    borderColor:
+                      riaVersion === opt.value ? "#6366f1" : "#e5e7eb",
+                    borderRadius: "8px",
+                    backgroundColor:
+                      riaVersion === opt.value ? "#6366f1" : "white",
+                    color: riaVersion === opt.value ? "white" : "#374151",
+                    cursor: "pointer",
+                    transition: "all 0.15s",
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Time Range Filter */}
           <div style={{ flex: "1", minWidth: "200px" }}>
             <label
@@ -466,7 +581,7 @@ function Analytics() {
                 display: "block",
                 fontSize: "12px",
                 fontWeight: "600",
-                color: "#6b7280",
+                color: riaVersion !== null ? "#d1d5db" : "#6b7280",
                 marginBottom: "4px",
               }}
             >
@@ -479,13 +594,16 @@ function Analytics() {
                   e.target.value === "" ? null : Number(e.target.value),
                 )
               }
+              disabled={riaVersion !== null}
               style={{
                 width: "100%",
                 padding: "8px 12px",
                 border: "1px solid #e5e7eb",
                 borderRadius: "8px",
                 fontSize: "14px",
-                backgroundColor: "white",
+                backgroundColor: riaVersion !== null ? "#f9fafb" : "white",
+                color: riaVersion !== null ? "#9ca3af" : "inherit",
+                cursor: riaVersion !== null ? "not-allowed" : "pointer",
               }}
             >
               <option value="">Todo el tiempo</option>
@@ -552,423 +670,850 @@ function Analytics() {
       {/* Main Content */}
       {metrics && (
         <div style={{ maxWidth: "1400px", margin: "0 auto" }}>
-          {/* Metric Cards */}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
-              gap: "16px",
-              marginBottom: "24px",
-            }}
-          >
-            {/* Generation Success Rate */}
-            <MetricCard
-              icon={<Zap size={24} style={{ color: "#3b82f6" }} />}
-              title="Tasa de Éxito IA"
-              value={`${Math.round((metrics.generation_success_rate || 0) * 100)}%`}
-              color="#3b82f6"
-              subtitle={`${metrics.successful_generations || 0} exitosas / ${metrics.failed_generations || 0} fallidas`}
-            />
-
-            {/* Total Edits */}
-            <MetricCard
-              icon={<Edit size={24} style={{ color: "#8b5cf6" }} />}
-              title="Ediciones de Usuario"
-              value={metrics.total_edits || 0}
-              color="#8b5cf6"
-            />
-
-            {/* Acceptance Rate */}
-            <MetricCard
-              icon={<CheckCircle2 size={24} style={{ color: "#10b981" }} />}
-              title="Tasa de Aceptación"
-              value={`${Math.round((metrics.acceptance_rate || 0) * 100)}%`}
-              color="#10b981"
-              subtitle="Generaciones exitosas aceptadas sin editar"
-            />
-
-            {/* Alignment Score */}
-            <MetricCard
-              icon={<Target size={24} style={{ color: "#06b6d4" }} />}
-              title="Alineación con IA"
-              value={
-                metrics.avg_alignment_shift_score !== null &&
-                metrics.avg_alignment_shift_score !== undefined
-                  ? `${Math.round((metrics.avg_alignment_shift_score || 0) * 100)}%`
-                  : "N/A"
-              }
-              color="#06b6d4"
-              subtitle="Similitud entre contenido IA original y edición final"
-            />
-          </div>
-
-          {/* Charts */}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(500px, 1fr))",
-              gap: "24px",
-              marginBottom: "24px",
-            }}
-          >
-            {/* Temporal Trends Chart */}
-            <div
-              style={{
-                backgroundColor: "white",
-                padding: "24px",
-                borderRadius: "12px",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
-              }}
-            >
-              <h3
+          {/* Metric Cards — solo cuando NO es v2 */}
+          {riaVersion !== "v2" && (
+            <>
+              <div
                 style={{
-                  fontSize: "18px",
-                  fontWeight: "600",
-                  marginBottom: "16px",
-                  color: "#111827",
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
+                  gap: "16px",
+                  marginBottom: "24px",
                 }}
               >
-                Tendencia Temporal
-              </h3>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={prepareChartData()}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  <Line
-                    type="monotone"
-                    dataKey="generaciones"
-                    stroke="#3b82f6"
-                    strokeWidth={2}
-                    dot={{ fill: "#3b82f6" }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="ediciones"
-                    stroke="#8b5cf6"
-                    strokeWidth={2}
-                    dot={{ fill: "#8b5cf6" }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
+                {/* Generation Success Rate */}
+                <MetricCard
+                  icon={<Zap size={24} style={{ color: "#3b82f6" }} />}
+                  title="Tasa de Éxito IA"
+                  value={`${Math.round((metrics.generation_success_rate || 0) * 100)}%`}
+                  color="#3b82f6"
+                  subtitle={`${metrics.successful_generations || 0} exitosas / ${metrics.failed_generations || 0} fallidas`}
+                />
 
-            {/* Most Edited Blocks Chart */}
-            <div
-              style={{
-                backgroundColor: "white",
-                padding: "24px",
-                borderRadius: "12px",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
-              }}
-            >
-              <h3
+                {/* Total Edits */}
+                <MetricCard
+                  icon={<Edit size={24} style={{ color: "#8b5cf6" }} />}
+                  title="Ediciones de Usuario"
+                  value={metrics.total_edits || 0}
+                  color="#8b5cf6"
+                />
+
+                {/* Acceptance Rate */}
+                <MetricCard
+                  icon={<CheckCircle2 size={24} style={{ color: "#10b981" }} />}
+                  title="Tasa de Aceptación"
+                  value={`${Math.round((metrics.acceptance_rate || 0) * 100)}%`}
+                  color="#10b981"
+                  subtitle="Generaciones exitosas aceptadas sin editar"
+                />
+
+                {/* Alignment Score */}
+                <MetricCard
+                  icon={<Target size={24} style={{ color: "#06b6d4" }} />}
+                  title="Alineación con IA"
+                  value={
+                    metrics.avg_alignment_shift_score !== null &&
+                    metrics.avg_alignment_shift_score !== undefined
+                      ? `${Math.round((metrics.avg_alignment_shift_score || 0) * 100)}%`
+                      : "N/A"
+                  }
+                  color="#06b6d4"
+                  subtitle="Similitud entre contenido IA original y edición final"
+                />
+              </div>
+
+              {/* Charts */}
+              <div
                 style={{
-                  fontSize: "18px",
-                  fontWeight: "600",
-                  marginBottom: "16px",
-                  color: "#111827",
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(500px, 1fr))",
+                  gap: "24px",
+                  marginBottom: "24px",
                 }}
               >
-                Bloques Más Editados (Top 5)
-              </h3>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={prepareBlockData()}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="bloque" />
-                  <YAxis />
-                  <Tooltip />
-                  <Bar dataKey="ediciones" fill="#8b5cf6" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
+                {/* Temporal Trends Chart */}
+                <div
+                  style={{
+                    backgroundColor: "white",
+                    padding: "24px",
+                    borderRadius: "12px",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+                  }}
+                >
+                  <h3
+                    style={{
+                      fontSize: "18px",
+                      fontWeight: "600",
+                      marginBottom: "16px",
+                      color: "#111827",
+                    }}
+                  >
+                    Tendencia Temporal
+                  </h3>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <LineChart data={prepareChartData()}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="date" />
+                      <YAxis />
+                      <Tooltip />
+                      <Legend />
+                      <Line
+                        type="monotone"
+                        dataKey="generaciones"
+                        stroke="#3b82f6"
+                        strokeWidth={2}
+                        dot={{ fill: "#3b82f6" }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="ediciones"
+                        stroke="#8b5cf6"
+                        strokeWidth={2}
+                        dot={{ fill: "#8b5cf6" }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
 
-          {/* Alignment Trends Chart - NEW */}
-          {metrics.alignment_trends &&
-            Object.keys(metrics.alignment_trends).length > 0 && (
+                {/* Most Edited Blocks Chart */}
+                <div
+                  style={{
+                    backgroundColor: "white",
+                    padding: "24px",
+                    borderRadius: "12px",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+                  }}
+                >
+                  <h3
+                    style={{
+                      fontSize: "18px",
+                      fontWeight: "600",
+                      marginBottom: "16px",
+                      color: "#111827",
+                    }}
+                  >
+                    Bloques Más Editados (Top 5)
+                  </h3>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={prepareBlockData()}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="bloque" />
+                      <YAxis />
+                      <Tooltip />
+                      <Bar dataKey="ediciones" fill="#8b5cf6" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              {/* Alignment Trends Chart - NEW */}
+              {metrics.alignment_trends &&
+                Object.keys(metrics.alignment_trends).length > 0 && (
+                  <div
+                    style={{
+                      backgroundColor: "white",
+                      padding: "24px",
+                      borderRadius: "12px",
+                      boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+                      marginBottom: "24px",
+                    }}
+                  >
+                    <h3
+                      style={{
+                        fontSize: "18px",
+                        fontWeight: "600",
+                        marginBottom: "8px",
+                        color: "#111827",
+                      }}
+                    >
+                      Evolución de la Alineación IA-Editor
+                    </h3>
+                    <p
+                      style={{
+                        fontSize: "14px",
+                        color: "#6b7280",
+                        marginBottom: "16px",
+                      }}
+                    >
+                      Muestra cómo mejora la IA con el tiempo (valores más altos
+                      = menos correcciones necesarias)
+                    </p>
+                    <ResponsiveContainer width="100%" height={300}>
+                      <LineChart data={prepareAlignmentChartData()}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="date" />
+                        <YAxis
+                          domain={[0, 1]}
+                          tickFormatter={(value) =>
+                            `${Math.round(value * 100)}%`
+                          }
+                        />
+                        <Tooltip
+                          formatter={(value) => `${Math.round(value * 100)}%`}
+                        />
+                        <Legend />
+                        <Line
+                          type="monotone"
+                          dataKey="alineacion"
+                          stroke="#06b6d4"
+                          strokeWidth={2}
+                          dot={{ fill: "#06b6d4" }}
+                          name="Alineación IA"
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+
+              {/* User Activity Section */}
+              {metrics.user_activity && metrics.user_activity.length > 0 && (
+                <div
+                  style={{
+                    backgroundColor: "white",
+                    borderRadius: "12px",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+                    marginBottom: "24px",
+                  }}
+                >
+                  <div
+                    style={{
+                      padding: "16px 24px",
+                      borderBottom: "1px solid #e5e7eb",
+                    }}
+                  >
+                    <h3
+                      style={{
+                        fontSize: "18px",
+                        fontWeight: "600",
+                        color: "#111827",
+                      }}
+                    >
+                      👥 Actividad por Usuario
+                    </h3>
+                  </div>
+
+                  <div style={{ padding: "16px 24px" }}>
+                    <div style={{ overflowX: "auto" }}>
+                      <table
+                        style={{ width: "100%", borderCollapse: "collapse" }}
+                      >
+                        <thead>
+                          <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
+                            <th
+                              style={{
+                                padding: "12px 8px",
+                                textAlign: "left",
+                                fontSize: "12px",
+                                fontWeight: "600",
+                                color: "#6b7280",
+                                textTransform: "uppercase",
+                              }}
+                            >
+                              Usuario
+                            </th>
+                            <th
+                              style={{
+                                padding: "12px 8px",
+                                textAlign: "center",
+                                fontSize: "12px",
+                                fontWeight: "600",
+                                color: "#6b7280",
+                                textTransform: "uppercase",
+                              }}
+                            >
+                              Generaciones
+                            </th>
+                            <th
+                              style={{
+                                padding: "12px 8px",
+                                textAlign: "center",
+                                fontSize: "12px",
+                                fontWeight: "600",
+                                color: "#6b7280",
+                                textTransform: "uppercase",
+                              }}
+                            >
+                              Exitosas
+                            </th>
+                            <th
+                              style={{
+                                padding: "12px 8px",
+                                textAlign: "center",
+                                fontSize: "12px",
+                                fontWeight: "600",
+                                color: "#6b7280",
+                                textTransform: "uppercase",
+                              }}
+                            >
+                              Fallidas
+                            </th>
+                            <th
+                              style={{
+                                padding: "12px 8px",
+                                textAlign: "center",
+                                fontSize: "12px",
+                                fontWeight: "600",
+                                color: "#6b7280",
+                                textTransform: "uppercase",
+                              }}
+                            >
+                              Ediciones
+                            </th>
+                            <th
+                              style={{
+                                padding: "12px 8px",
+                                textAlign: "center",
+                                fontSize: "12px",
+                                fontWeight: "600",
+                                color: "#6b7280",
+                                textTransform: "uppercase",
+                              }}
+                            >
+                              Correcciones Admin
+                            </th>
+                            <th
+                              style={{
+                                padding: "12px 8px",
+                                textAlign: "center",
+                                fontSize: "12px",
+                                fontWeight: "600",
+                                color: "#6b7280",
+                                textTransform: "uppercase",
+                              }}
+                            >
+                              Alineación IA
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {metrics.user_activity.map((userStat, index) => (
+                            <tr
+                              key={userStat.user_id}
+                              style={{
+                                borderBottom:
+                                  index < metrics.user_activity.length - 1
+                                    ? "1px solid #f3f4f6"
+                                    : "none",
+                                backgroundColor:
+                                  index % 2 === 0 ? "#ffffff" : "#f9fafb",
+                              }}
+                            >
+                              <td
+                                style={{
+                                  padding: "12px 8px",
+                                  fontSize: "14px",
+                                  color: "#111827",
+                                }}
+                              >
+                                {userStat.user_email}
+                              </td>
+                              <td
+                                style={{
+                                  padding: "12px 8px",
+                                  textAlign: "center",
+                                  fontSize: "14px",
+                                  color: "#111827",
+                                  fontWeight: "600",
+                                }}
+                              >
+                                {userStat.total_generations}
+                              </td>
+                              <td
+                                style={{
+                                  padding: "12px 8px",
+                                  textAlign: "center",
+                                  fontSize: "14px",
+                                  color: "#10b981",
+                                }}
+                              >
+                                {userStat.successful_generations}
+                              </td>
+                              <td
+                                style={{
+                                  padding: "12px 8px",
+                                  textAlign: "center",
+                                  fontSize: "14px",
+                                  color: "#ef4444",
+                                }}
+                              >
+                                {userStat.failed_generations}
+                              </td>
+                              <td
+                                style={{
+                                  padding: "12px 8px",
+                                  textAlign: "center",
+                                  fontSize: "14px",
+                                  color: "#8b5cf6",
+                                  fontWeight: "600",
+                                }}
+                              >
+                                {userStat.total_edits}
+                              </td>
+                              <td
+                                style={{
+                                  padding: "12px 8px",
+                                  textAlign: "center",
+                                  fontSize: "14px",
+                                  color: "#3b82f6",
+                                }}
+                              >
+                                {userStat.admin_edits_received > 0 ? (
+                                  <span
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      gap: "4px",
+                                    }}
+                                  >
+                                    <span>{userStat.admin_edits_received}</span>
+                                  </span>
+                                ) : (
+                                  "—"
+                                )}
+                              </td>
+                              <td
+                                style={{
+                                  padding: "12px 8px",
+                                  textAlign: "center",
+                                  fontSize: "14px",
+                                  color: "#06b6d4",
+                                }}
+                              >
+                                {userStat.avg_alignment_score !== null &&
+                                userStat.avg_alignment_score !== undefined
+                                  ? `${Math.round(userStat.avg_alignment_score * 100)}%`
+                                  : "N/A"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+          {/* ── RIA-V2 Section ── solo visible cuando riaVersion === "v2" */}
+          {riaVersion === "v2" && <div
+            style={{ marginTop: "0", paddingTop: "0" }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "12px",
+                marginBottom: "20px",
+              }}
+            >
+              <h2
+                style={{
+                  fontSize: "26px",
+                  fontWeight: "700",
+                  color: "#111827",
+                  margin: 0,
+                }}
+              >
+                🧠 Analíticas RIA-V2
+              </h2>
+              {ria2Loading && (
+                <RefreshCw
+                  size={16}
+                  style={{
+                    color: "#6366f1",
+                    animation: "spin 1s linear infinite",
+                  }}
+                />
+              )}
+            </div>
+
+            {ria2Metrics && (
+              <>
+                {/* RIA-V2 Summary Cards */}
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                    gap: "16px",
+                    marginBottom: "24px",
+                  }}
+                >
+                  <MetricCard
+                    icon={<Zap size={24} style={{ color: "#6366f1" }} />}
+                    title="Bloques con IA"
+                    value={ria2Metrics.total_sections_generated}
+                    color="#6366f1"
+                    subtitle="Secciones con generación IA registrada"
+                  />
+                  <MetricCard
+                    icon={
+                      <CheckCircle2 size={24} style={{ color: "#10b981" }} />
+                    }
+                    title="Guardados Reales"
+                    value={ria2Metrics.total_saves}
+                    color="#10b981"
+                    subtitle="Eventos de guardado general registrados"
+                  />
+                  <MetricCard
+                    icon={<Target size={24} style={{ color: "#f59e0b" }} />}
+                    title="% IA Conservada"
+                    value={
+                      ria2Metrics.avg_pct_ai_kept !== null &&
+                      ria2Metrics.avg_pct_ai_kept !== undefined
+                        ? `${Math.round(ria2Metrics.avg_pct_ai_kept * 100)}%`
+                        : "N/A"
+                    }
+                    color="#f59e0b"
+                    subtitle="Promedio de palabras IA conservadas al guardar"
+                  />
+                  <MetricCard
+                    icon={<Zap size={24} style={{ color: "#06b6d4" }} />}
+                    title="Aceptación Directa"
+                    value={
+                      ria2Metrics.acceptance_dist
+                        ? `${Math.round(ria2Metrics.acceptance_dist.accepted_pct * 100)}%`
+                        : "N/A"
+                    }
+                    color="#06b6d4"
+                    subtitle="Bloques conservados ≥70% del texto IA"
+                  />
+                </div>
+
+                {/* RIA-V2 Charts */}
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(480px, 1fr))",
+                    gap: "24px",
+                    marginBottom: "24px",
+                  }}
+                >
+                  {/* Acceptance Distribution */}
+                  <div
+                    style={{
+                      backgroundColor: "white",
+                      padding: "24px",
+                      borderRadius: "12px",
+                      boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+                    }}
+                  >
+                    <h3
+                      style={{
+                        fontSize: "18px",
+                        fontWeight: "600",
+                        marginBottom: "6px",
+                        color: "#111827",
+                      }}
+                    >
+                      Distribución de Aceptación
+                    </h3>
+                    <p
+                      style={{
+                        fontSize: "13px",
+                        color: "#6b7280",
+                        marginBottom: "16px",
+                      }}
+                    >
+                      Aceptado ≥70% · Modificado 30-69% · Reescrito &lt;30% ·
+                      Manual (sin IA)
+                    </p>
+                    <ResponsiveContainer width="100%" height={260}>
+                      <BarChart
+                        data={prepareAcceptanceDistData()}
+                        margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="nivel" />
+                        <YAxis />
+                        <Tooltip
+                          formatter={(value, name, props) => [
+                            `${value} (${Math.round(props.payload.pct * 100)}%)`,
+                            "Bloques",
+                          ]}
+                        />
+                        <Bar
+                          dataKey="cantidad"
+                          name="Bloques"
+                          radius={[4, 4, 0, 0]}
+                        >
+                          {prepareAcceptanceDistData().map((entry, index) => (
+                            <Cell
+                              key={`cell-${index}`}
+                              fill={
+                                entry.nivel === "Aceptado"
+                                  ? "#10b981"
+                                  : entry.nivel === "Modificado"
+                                    ? "#f59e0b"
+                                    : entry.nivel === "Reescrito"
+                                      ? "#ef4444"
+                                      : "#9ca3af"
+                              }
+                            />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  {/* Per block type pct_ai_kept */}
+                  {prepareBlockPctData().length > 0 && (
+                    <div
+                      style={{
+                        backgroundColor: "white",
+                        padding: "24px",
+                        borderRadius: "12px",
+                        boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+                      }}
+                    >
+                      <h3
+                        style={{
+                          fontSize: "18px",
+                          fontWeight: "600",
+                          marginBottom: "6px",
+                          color: "#111827",
+                        }}
+                      >
+                        % IA Conservada por Bloque
+                      </h3>
+                      <p
+                        style={{
+                          fontSize: "13px",
+                          color: "#6b7280",
+                          marginBottom: "16px",
+                        }}
+                      >
+                        Cuánto del texto IA conserva el redactor al guardar cada
+                        tipo de bloque
+                      </p>
+                      <ResponsiveContainer width="100%" height={260}>
+                        <BarChart
+                          data={prepareBlockPctData()}
+                          margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="bloque" />
+                          <YAxis
+                            tickFormatter={(v) => `${Math.round(v * 100)}%`}
+                            domain={[0, 1]}
+                          />
+                          <Tooltip
+                            formatter={(v, name, props) => [
+                              `${Math.round(v * 100)}% (${props.payload.guardados} guardados)`,
+                              "% IA Conservada",
+                            ]}
+                          />
+                          <Bar
+                            dataKey="pct_ai_kept"
+                            name="% IA Conservada"
+                            fill="#6366f1"
+                            radius={[4, 4, 0, 0]}
+                          />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                </div>
+
+                {/* Per redactor RIA-V2 table */}
+                {ria2Metrics.by_user && ria2Metrics.by_user.length > 0 && (
+                  <div
+                    style={{
+                      backgroundColor: "white",
+                      borderRadius: "12px",
+                      boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+                      marginBottom: "24px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        padding: "16px 24px",
+                        borderBottom: "1px solid #e5e7eb",
+                      }}
+                    >
+                      <h3
+                        style={{
+                          fontSize: "18px",
+                          fontWeight: "600",
+                          color: "#111827",
+                        }}
+                      >
+                        📊 Aceptación por Redactor (RIA-V2)
+                      </h3>
+                    </div>
+                    <div style={{ padding: "16px 24px", overflowX: "auto" }}>
+                      <table
+                        style={{ width: "100%", borderCollapse: "collapse" }}
+                      >
+                        <thead>
+                          <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
+                            {[
+                              { label: "Redactor", align: "left" },
+                              { label: "Bloques IA", align: "center" },
+                              { label: "Guardados", align: "center" },
+                              { label: "% IA conservada", align: "center" },
+                              { label: "Regens prom.", align: "center" },
+                              { label: "✅ Aceptado", align: "center" },
+                              { label: "✏️ Modificado", align: "center" },
+                              { label: "🔄 Reescrito", align: "center" },
+                              { label: "📝 Manual", align: "center" },
+                            ].map((h) => (
+                              <th
+                                key={h.label}
+                                style={{
+                                  padding: "12px 8px",
+                                  textAlign: h.align,
+                                  fontSize: "12px",
+                                  fontWeight: "600",
+                                  color: "#6b7280",
+                                  textTransform: "uppercase",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {h.label}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {ria2Metrics.by_user.map((u, i) => (
+                            <tr
+                              key={u.user_id}
+                              style={{
+                                borderBottom:
+                                  i < ria2Metrics.by_user.length - 1
+                                    ? "1px solid #f3f4f6"
+                                    : "none",
+                                backgroundColor:
+                                  i % 2 === 0 ? "#fff" : "#f9fafb",
+                              }}
+                            >
+                              <td
+                                style={{
+                                  padding: "12px 8px",
+                                  fontSize: "14px",
+                                  color: "#111827",
+                                }}
+                              >
+                                {u.user_email}
+                              </td>
+                              <td
+                                style={{
+                                  padding: "12px 8px",
+                                  textAlign: "center",
+                                  fontSize: "14px",
+                                  color: "#111827",
+                                }}
+                              >
+                                {u.total_blocks_generated}
+                              </td>
+                              <td
+                                style={{
+                                  padding: "12px 8px",
+                                  textAlign: "center",
+                                  fontSize: "14px",
+                                  fontWeight: "600",
+                                  color: "#111827",
+                                }}
+                              >
+                                {u.total_saves}
+                              </td>
+                              <td
+                                style={{
+                                  padding: "12px 8px",
+                                  textAlign: "center",
+                                  fontSize: "14px",
+                                  fontWeight: "700",
+                                  color: getPctColor(u.avg_pct_ai_kept),
+                                }}
+                              >
+                                {u.avg_pct_ai_kept !== null &&
+                                u.avg_pct_ai_kept !== undefined
+                                  ? `${Math.round(u.avg_pct_ai_kept * 100)}%`
+                                  : "N/A"}
+                              </td>
+                              <td
+                                style={{
+                                  padding: "12px 8px",
+                                  textAlign: "center",
+                                  fontSize: "14px",
+                                  color: "#6b7280",
+                                }}
+                              >
+                                {u.avg_regenerations !== null &&
+                                u.avg_regenerations !== undefined
+                                  ? u.avg_regenerations.toFixed(1)
+                                  : "N/A"}
+                              </td>
+                              <td
+                                style={{
+                                  padding: "12px 8px",
+                                  textAlign: "center",
+                                  fontSize: "14px",
+                                  color: "#10b981",
+                                  fontWeight: "600",
+                                }}
+                              >
+                                {u.acceptance_dist.accepted}
+                              </td>
+                              <td
+                                style={{
+                                  padding: "12px 8px",
+                                  textAlign: "center",
+                                  fontSize: "14px",
+                                  color: "#f59e0b",
+                                  fontWeight: "600",
+                                }}
+                              >
+                                {u.acceptance_dist.modified}
+                              </td>
+                              <td
+                                style={{
+                                  padding: "12px 8px",
+                                  textAlign: "center",
+                                  fontSize: "14px",
+                                  color: "#ef4444",
+                                  fontWeight: "600",
+                                }}
+                              >
+                                {u.acceptance_dist.rewrite}
+                              </td>
+                              <td
+                                style={{
+                                  padding: "12px 8px",
+                                  textAlign: "center",
+                                  fontSize: "14px",
+                                  color: "#9ca3af",
+                                }}
+                              >
+                                {u.acceptance_dist.manual}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {!ria2Metrics && !ria2Loading && (
               <div
                 style={{
                   backgroundColor: "white",
                   padding: "24px",
                   borderRadius: "12px",
                   boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
-                  marginBottom: "24px",
+                  textAlign: "center",
+                  color: "#9ca3af",
+                  fontSize: "14px",
                 }}
               >
-                <h3
-                  style={{
-                    fontSize: "18px",
-                    fontWeight: "600",
-                    marginBottom: "8px",
-                    color: "#111827",
-                  }}
-                >
-                  Evolución de la Alineación IA-Editor
-                </h3>
-                <p
-                  style={{
-                    fontSize: "14px",
-                    color: "#6b7280",
-                    marginBottom: "16px",
-                  }}
-                >
-                  Muestra cómo mejora la IA con el tiempo (valores más altos =
-                  menos correcciones necesarias)
-                </p>
-                <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={prepareAlignmentChartData()}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
-                    <YAxis
-                      domain={[0, 1]}
-                      tickFormatter={(value) => `${Math.round(value * 100)}%`}
-                    />
-                    <Tooltip
-                      formatter={(value) => `${Math.round(value * 100)}%`}
-                    />
-                    <Legend />
-                    <Line
-                      type="monotone"
-                      dataKey="alineacion"
-                      stroke="#06b6d4"
-                      strokeWidth={2}
-                      dot={{ fill: "#06b6d4" }}
-                      name="Alineación IA"
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
+                No hay datos RIA-V2 para los filtros seleccionados.
               </div>
             )}
-
-          {/* User Activity Section */}
-          {metrics.user_activity && metrics.user_activity.length > 0 && (
-            <div
-              style={{
-                backgroundColor: "white",
-                borderRadius: "12px",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
-                marginBottom: "24px",
-              }}
-            >
-              <div
-                style={{
-                  padding: "16px 24px",
-                  borderBottom: "1px solid #e5e7eb",
-                }}
-              >
-                <h3
-                  style={{
-                    fontSize: "18px",
-                    fontWeight: "600",
-                    color: "#111827",
-                  }}
-                >
-                  👥 Actividad por Usuario
-                </h3>
-              </div>
-
-              <div style={{ padding: "16px 24px" }}>
-                <div style={{ overflowX: "auto" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                    <thead>
-                      <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
-                        <th
-                          style={{
-                            padding: "12px 8px",
-                            textAlign: "left",
-                            fontSize: "12px",
-                            fontWeight: "600",
-                            color: "#6b7280",
-                            textTransform: "uppercase",
-                          }}
-                        >
-                          Usuario
-                        </th>
-                        <th
-                          style={{
-                            padding: "12px 8px",
-                            textAlign: "center",
-                            fontSize: "12px",
-                            fontWeight: "600",
-                            color: "#6b7280",
-                            textTransform: "uppercase",
-                          }}
-                        >
-                          Generaciones
-                        </th>
-                        <th
-                          style={{
-                            padding: "12px 8px",
-                            textAlign: "center",
-                            fontSize: "12px",
-                            fontWeight: "600",
-                            color: "#6b7280",
-                            textTransform: "uppercase",
-                          }}
-                        >
-                          Exitosas
-                        </th>
-                        <th
-                          style={{
-                            padding: "12px 8px",
-                            textAlign: "center",
-                            fontSize: "12px",
-                            fontWeight: "600",
-                            color: "#6b7280",
-                            textTransform: "uppercase",
-                          }}
-                        >
-                          Fallidas
-                        </th>
-                        <th
-                          style={{
-                            padding: "12px 8px",
-                            textAlign: "center",
-                            fontSize: "12px",
-                            fontWeight: "600",
-                            color: "#6b7280",
-                            textTransform: "uppercase",
-                          }}
-                        >
-                          Ediciones
-                        </th>
-                        <th
-                          style={{
-                            padding: "12px 8px",
-                            textAlign: "center",
-                            fontSize: "12px",
-                            fontWeight: "600",
-                            color: "#6b7280",
-                            textTransform: "uppercase",
-                          }}
-                        >
-                          Correcciones Admin
-                        </th>
-                        <th
-                          style={{
-                            padding: "12px 8px",
-                            textAlign: "center",
-                            fontSize: "12px",
-                            fontWeight: "600",
-                            color: "#6b7280",
-                            textTransform: "uppercase",
-                          }}
-                        >
-                          Alineación IA
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {metrics.user_activity.map((userStat, index) => (
-                        <tr
-                          key={userStat.user_id}
-                          style={{
-                            borderBottom:
-                              index < metrics.user_activity.length - 1
-                                ? "1px solid #f3f4f6"
-                                : "none",
-                            backgroundColor:
-                              index % 2 === 0 ? "#ffffff" : "#f9fafb",
-                          }}
-                        >
-                          <td
-                            style={{
-                              padding: "12px 8px",
-                              fontSize: "14px",
-                              color: "#111827",
-                            }}
-                          >
-                            {userStat.user_email}
-                          </td>
-                          <td
-                            style={{
-                              padding: "12px 8px",
-                              textAlign: "center",
-                              fontSize: "14px",
-                              color: "#111827",
-                              fontWeight: "600",
-                            }}
-                          >
-                            {userStat.total_generations}
-                          </td>
-                          <td
-                            style={{
-                              padding: "12px 8px",
-                              textAlign: "center",
-                              fontSize: "14px",
-                              color: "#10b981",
-                            }}
-                          >
-                            {userStat.successful_generations}
-                          </td>
-                          <td
-                            style={{
-                              padding: "12px 8px",
-                              textAlign: "center",
-                              fontSize: "14px",
-                              color: "#ef4444",
-                            }}
-                          >
-                            {userStat.failed_generations}
-                          </td>
-                          <td
-                            style={{
-                              padding: "12px 8px",
-                              textAlign: "center",
-                              fontSize: "14px",
-                              color: "#8b5cf6",
-                              fontWeight: "600",
-                            }}
-                          >
-                            {userStat.total_edits}
-                          </td>
-                          <td
-                            style={{
-                              padding: "12px 8px",
-                              textAlign: "center",
-                              fontSize: "14px",
-                              color: "#3b82f6",
-                            }}
-                          >
-                            {userStat.admin_edits_received > 0 ? (
-                              <span
-                                style={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  gap: "4px",
-                                }}
-                              >
-                                <span>{userStat.admin_edits_received}</span>
-                              </span>
-                            ) : (
-                              "—"
-                            )}
-                          </td>
-                          <td
-                            style={{
-                              padding: "12px 8px",
-                              textAlign: "center",
-                              fontSize: "14px",
-                              color: "#06b6d4",
-                            }}
-                          >
-                            {userStat.avg_alignment_score !== null &&
-                            userStat.avg_alignment_score !== undefined
-                              ? `${Math.round(userStat.avg_alignment_score * 100)}%`
-                              : "N/A"}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          )}
+          </div>}
 
           {/* User Profile Section (if available) */}
           {metrics.user_profile && (

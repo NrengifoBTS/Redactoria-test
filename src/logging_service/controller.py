@@ -20,9 +20,13 @@ from .models import (
     AcceptanceStatusRequest,
     EditHistoryResponse,
     BlockEditStats,
-    BlockAlignmentStats,  # NEW
+    BlockAlignmentStats,
     UserActivityStats,
-    GenerationFailureRequest
+    GenerationFailureRequest,
+    RiaV2AcceptanceDist,
+    RiaV2UserStats,
+    RiaV2BlockTypeStats,
+    RiaV2MetricsResponse,
 )
 from .edit_logging import EditLoggingService
 from .profile_builder import ProfileBuilderService
@@ -160,6 +164,8 @@ def get_metrics(
     proyecto_general: Optional[str] = None,
     user_id: Optional[UUID] = None,
     days: Optional[int] = 30,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
     exclude_admins: bool = False
 ):
     """
@@ -171,6 +177,8 @@ def get_metrics(
     - proyecto_general: Filter by general project name like "viajemos", "mcr" (optional)
     - user_id: Filter by specific user (optional)
     - days: Time range in days (default: 30, None for all time)
+    - date_from: ISO date string lower bound, overrides days when provided
+    - date_to: ISO date string upper bound (exclusive)
 
     Returns:
     - Total generations and edits
@@ -184,8 +192,23 @@ def get_metrics(
     from src.entities.landing_page import LandingPage
     from src.entities.template import Template
 
-    # Calculate cutoff date (None means all time)
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days) if days is not None else None
+    # Lower bound: date_from takes priority over days
+    cutoff: Optional[datetime] = None
+    if date_from:
+        try:
+            cutoff = datetime.fromisoformat(date_from).replace(tzinfo=timezone.utc)
+        except Exception:
+            pass
+    elif days is not None:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+
+    # Upper bound (exclusive): only applies when date_to is provided
+    cutoff_upper: Optional[datetime] = None
+    if date_to:
+        try:
+            cutoff_upper = datetime.fromisoformat(date_to).replace(tzinfo=timezone.utc)
+        except Exception:
+            pass
 
     # If proyecto_general is provided, get all landing_page_ids that belong to that general project
     landing_page_ids_filter = None
@@ -202,6 +225,8 @@ def get_metrics(
     gen_query = db.query(AIGeneration)
     if cutoff is not None:
         gen_query = gen_query.filter(AIGeneration.created_at >= cutoff)
+    if cutoff_upper is not None:
+        gen_query = gen_query.filter(AIGeneration.created_at < cutoff_upper)
     if proyecto_id:
         gen_query = gen_query.filter(AIGeneration.proyecto_id == proyecto_id)
     if landing_page_id:
@@ -226,6 +251,8 @@ def get_metrics(
     edit_query = db.query(UserEdit)
     if cutoff is not None:
         edit_query = edit_query.filter(UserEdit.created_at >= cutoff)
+    if cutoff_upper is not None:
+        edit_query = edit_query.filter(UserEdit.created_at < cutoff_upper)
     if proyecto_id:
         edit_query = edit_query.filter(UserEdit.proyecto_id == proyecto_id)
     if landing_page_id:
@@ -469,6 +496,202 @@ def get_metrics(
         avg_alignment_shift_score=avg_alignment,
         alignment_trends=alignment_trends,
         alignment_by_block=alignment_by_block
+    )
+
+
+@router.get("/ria-v2-metrics", response_model=RiaV2MetricsResponse)
+def get_ria_v2_metrics(
+    db: DbSession,
+    current_user: CurrentUser,
+    landing_page_id: Optional[UUID] = None,
+    proyecto_id: Optional[UUID] = None,
+    proyecto_general: Optional[str] = None,
+    user_id: Optional[UUID] = None,
+    days: Optional[int] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+):
+    """
+    Get real acceptance metrics from ria_v2_save_log and ria_v2_generation_log.
+    Returns pct_ai_kept distributions, per-user and per-block breakdowns.
+    """
+    from ..entities.ria_v2 import RiaV2GenerationLog, RiaV2SaveLog
+    from src.entities.landing_page import LandingPage
+    from src.entities.template import Template
+    from src.entities.user import User
+
+    # Date bounds
+    cutoff_lower = None
+    if date_from:
+        try:
+            cutoff_lower = datetime.fromisoformat(date_from.replace("Z", "+00:00"))
+        except Exception:
+            pass
+    elif days is not None:
+        cutoff_lower = datetime.now(timezone.utc) - timedelta(days=days)
+
+    cutoff_upper = None
+    if date_to:
+        try:
+            cutoff_upper = datetime.fromisoformat(date_to.replace("Z", "+00:00"))
+        except Exception:
+            pass
+
+    # Resolve proyecto_general → landing page id list
+    landing_page_ids_filter = None
+    if proyecto_general:
+        templates = db.query(Template).filter(Template.proyecto == proyecto_general).all()
+        template_ids = [t.id for t in templates]
+        if template_ids:
+            lps = db.query(LandingPage).filter(LandingPage.template_id.in_(template_ids)).all()
+            landing_page_ids_filter = [lp.id for lp in lps]
+        else:
+            landing_page_ids_filter = []
+
+    # Early exit when no LP matches the project filter
+    if landing_page_ids_filter is not None and len(landing_page_ids_filter) == 0:
+        return RiaV2MetricsResponse(
+            total_sections_generated=0,
+            total_saves=0,
+            acceptance_dist=RiaV2AcceptanceDist(),
+            by_user=[],
+            by_block=[],
+            temporal_trends={},
+        )
+
+    def _apply_filters(q, model):
+        if cutoff_lower:
+            q = q.filter(model.created_at >= cutoff_lower.isoformat())
+        if cutoff_upper:
+            q = q.filter(model.created_at < cutoff_upper.isoformat())
+        if proyecto_id:
+            q = q.filter(model.proyecto_id == proyecto_id)
+        if landing_page_id:
+            q = q.filter(model.landing_page_id == landing_page_id)
+        elif landing_page_ids_filter is not None:
+            q = q.filter(model.landing_page_id.in_(landing_page_ids_filter))
+        if user_id:
+            q = q.filter(model.user_id == user_id)
+        return q
+
+    saves = _apply_filters(db.query(RiaV2SaveLog), RiaV2SaveLog).all()
+    gens = _apply_filters(db.query(RiaV2GenerationLog), RiaV2GenerationLog).all()
+
+    # ── Overall stats ──
+    total_sections_generated = len(
+        set((str(g.landing_page_id), g.cell_position) for g in gens)
+    )
+
+    def _build_dist(save_list):
+        cnt = Counter(s.acceptance_level for s in save_list if s.acceptance_level)
+        total = sum(cnt.values())
+        def p(k): return round(cnt.get(k, 0) / total, 4) if total > 0 else 0.0
+        return RiaV2AcceptanceDist(
+            accepted=cnt.get("accepted", 0),
+            modified=cnt.get("modified", 0),
+            rewrite=cnt.get("rewrite", 0),
+            manual=cnt.get("manual", 0),
+            accepted_pct=p("accepted"),
+            modified_pct=p("modified"),
+            rewrite_pct=p("rewrite"),
+            manual_pct=p("manual"),
+        )
+
+    acceptance_dist = _build_dist(saves)
+
+    pct_vals = [s.pct_ai_kept for s in saves if s.pct_ai_kept is not None]
+    avg_pct = round(sum(pct_vals) / len(pct_vals), 4) if pct_vals else None
+
+    regen_vals = [
+        s.total_generations_for_block for s in saves
+        if s.total_generations_for_block and s.total_generations_for_block > 0
+    ]
+    avg_regens = round(sum(regen_vals) / len(regen_vals), 2) if regen_vals else None
+
+    # ── Per user ──
+    user_saves_map: dict = defaultdict(list)
+    for s in saves:
+        user_saves_map[s.user_id].append(s)
+
+    user_gens_map: dict = defaultdict(set)
+    for g in gens:
+        user_gens_map[g.user_id].add((str(g.landing_page_id), g.cell_position))
+
+    by_user = []
+    for uid in set(user_saves_map) | set(user_gens_map):
+        user_obj = db.query(User).filter(User.id == uid).first()
+        if not user_obj:
+            continue
+        u_saves = user_saves_map.get(uid, [])
+        u_pct = [s.pct_ai_kept for s in u_saves if s.pct_ai_kept is not None]
+        u_regen = [
+            s.total_generations_for_block for s in u_saves
+            if s.total_generations_for_block and s.total_generations_for_block > 0
+        ]
+        by_user.append(RiaV2UserStats(
+            user_id=uid,
+            user_email=user_obj.email,
+            total_blocks_generated=len(user_gens_map.get(uid, set())),
+            total_saves=len(u_saves),
+            avg_pct_ai_kept=round(sum(u_pct) / len(u_pct), 4) if u_pct else None,
+            avg_regenerations=round(sum(u_regen) / len(u_regen), 2) if u_regen else None,
+            acceptance_dist=_build_dist(u_saves),
+        ))
+    by_user.sort(key=lambda u: u.total_saves, reverse=True)
+
+    # ── Per block type ──
+    block_saves_map: dict = defaultdict(list)
+    for s in saves:
+        block_saves_map[s.block_type].append(s)
+
+    by_block = []
+    for bt, bt_saves in block_saves_map.items():
+        bt_pct = [s.pct_ai_kept for s in bt_saves if s.pct_ai_kept is not None]
+        bt_regen = [
+            s.total_generations_for_block for s in bt_saves
+            if s.total_generations_for_block and s.total_generations_for_block > 0
+        ]
+        by_block.append(RiaV2BlockTypeStats(
+            block_type=bt,
+            total_saves=len(bt_saves),
+            avg_pct_ai_kept=round(sum(bt_pct) / len(bt_pct), 4) if bt_pct else None,
+            avg_regenerations=round(sum(bt_regen) / len(bt_regen), 2) if bt_regen else None,
+            acceptance_dist=_build_dist(bt_saves),
+        ))
+    by_block.sort(key=lambda b: b.total_saves, reverse=True)
+
+    # ── Temporal trends ──
+    daily: dict = defaultdict(lambda: {"saves": 0, "pct_sum": 0.0, "pct_count": 0})
+    for s in saves:
+        try:
+            day = s.created_at[:10]
+            daily[day]["saves"] += 1
+            if s.pct_ai_kept is not None:
+                daily[day]["pct_sum"] += s.pct_ai_kept
+                daily[day]["pct_count"] += 1
+        except Exception:
+            pass
+
+    temporal_trends = {
+        day: {
+            "saves": data["saves"],
+            "avg_pct_ai_kept": (
+                round(data["pct_sum"] / data["pct_count"], 4)
+                if data["pct_count"] > 0 else None
+            ),
+        }
+        for day, data in daily.items()
+    }
+
+    return RiaV2MetricsResponse(
+        total_sections_generated=total_sections_generated,
+        total_saves=len(saves),
+        avg_pct_ai_kept=avg_pct,
+        avg_regenerations=avg_regens,
+        acceptance_dist=acceptance_dist,
+        by_user=by_user,
+        by_block=by_block,
+        temporal_trends=temporal_trends,
     )
 
 

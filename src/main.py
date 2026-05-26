@@ -21,6 +21,9 @@ from .entities.logging.training_dataset import TrainingDataset
 from .entities.logging.narrative_flow import NarrativeFlow
 from .entities.logging.translation_quality import TranslationQuality
 
+# Import RIA-V2 entities (tables created via SQL migration)
+from .entities.ria_v2 import RiaV2GenerationLog, RiaV2SaveLog, RiaV2BlockSession
+
 from .api import register_routes
 from .logging_custom import configure_logging, LogLevels
 

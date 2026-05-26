@@ -7,6 +7,7 @@ from io import BytesIO
 from ..database.core import DbSession
 from . import models
 from . import service
+from . import secciones_service
 from ..auth.service import CurrentUser
 
 router = APIRouter(
@@ -28,11 +29,11 @@ def export_to_excel(
         logging.info(f"Starting Excel export for user: {current_user.get_uuid()}")
         logging.info(f"Template: {export_request.template_info.name}")
         
-        # Crear archivo Excel
-        excel_buffer = service.create_excel_from_template(export_request)
-        
+        # Crear archivo Excel con hoja Secciones
+        excel_buffer = secciones_service.generate_secciones_excel(export_request)
+
         # Generar nombre de archivo
-        filename = service.generate_filename(export_request.template_info)
+        filename = service.generate_filename(export_request)
         
         # Configurar headers para la descarga
         headers = {
@@ -103,7 +104,7 @@ def validate_export_data(
         return models.ExportExcelResponse(
             success=True,
             message="Data validation completed successfully",
-            filename=service.generate_filename(export_request.template_info)
+            filename=service.generate_filename(export_request)
         )
         
     except HTTPException:

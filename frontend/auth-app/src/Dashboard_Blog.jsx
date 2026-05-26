@@ -17,6 +17,7 @@ const getStatusText = (status) => {
     draft: "Borrador",
     generated: "Estructura Generada",
     review: "En Revisión",
+    pending_review: "Pendiente de Revisión",
     reviewed_ai: "Revisado con IA",
     approved: "Aprobado",
     published: "Publicado",

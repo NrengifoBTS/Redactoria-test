@@ -130,3 +130,45 @@ class GenerationFailureRequest(BaseModel):
     landing_page_id: UUID
     cell_position: str
     failure_reason: str
+
+
+# ── RIA-V2 Analytics Models ──
+
+class RiaV2AcceptanceDist(BaseModel):
+    accepted: int = 0
+    modified: int = 0
+    rewrite: int = 0
+    manual: int = 0
+    accepted_pct: float = 0.0
+    modified_pct: float = 0.0
+    rewrite_pct: float = 0.0
+    manual_pct: float = 0.0
+
+
+class RiaV2UserStats(BaseModel):
+    user_id: UUID
+    user_email: str
+    total_blocks_generated: int
+    total_saves: int
+    avg_pct_ai_kept: Optional[float] = None
+    avg_regenerations: Optional[float] = None
+    acceptance_dist: RiaV2AcceptanceDist
+
+
+class RiaV2BlockTypeStats(BaseModel):
+    block_type: str
+    total_saves: int
+    avg_pct_ai_kept: Optional[float] = None
+    avg_regenerations: Optional[float] = None
+    acceptance_dist: RiaV2AcceptanceDist
+
+
+class RiaV2MetricsResponse(BaseModel):
+    total_sections_generated: int
+    total_saves: int
+    avg_pct_ai_kept: Optional[float] = None
+    avg_regenerations: Optional[float] = None
+    acceptance_dist: RiaV2AcceptanceDist
+    by_user: List[RiaV2UserStats]
+    by_block: List[RiaV2BlockTypeStats]
+    temporal_trends: Dict[str, Any]

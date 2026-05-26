@@ -1134,6 +1134,7 @@ export default function Redactor() {
           is_active: currentTemplate.is_active,
         },
         cell_data: getCellDataFromTable(),
+        lp_url_slug: currentLP?.title || currentLP?.url_slug || "",
       };
 
       // Llamar al endpoint
@@ -1160,9 +1161,27 @@ export default function Redactor() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${currentTemplate.name}_${currentTemplate.categoria}_${
-        new Date().toISOString().split("T")[0]
-      }.xlsx`;
+      // Fecha en formato DD-MM-YYYY
+      const _now = new Date();
+      const _dateStr = `${String(_now.getDate()).padStart(2,"0")}-${String(_now.getMonth()+1).padStart(2,"0")}-${_now.getFullYear()}`;
+      // Proyecto
+      const _proyecto = (currentTemplate.proyecto || "").toLowerCase();
+      const _isVjm = _proyecto.includes("viajemos") || _proyecto.includes("vjm");
+      const _siteName = _isVjm ? "Viajemos" : "Miles Car Rental";
+      // Ciudad desde el slug de la LP
+      const _lpHint = currentLP?.title || currentLP?.url_slug || "";
+      let _city = "";
+      if (_lpHint.includes("/")) {
+        const _segs = _lpHint.split("/").filter(Boolean);
+        if (_segs.length) _city = _segs[_segs.length - 1].split("-")[0];
+      }
+      if (!_city) {
+        const _m = _lpHint.match(/\b(?:en|in)\s+([A-ZÁÉÍÓÚ][a-záéíóúüñ]+)/);
+        if (_m) _city = _m[1];
+      }
+      if (!_city && _lpHint) _city = _lpHint.split(/[\s_\-/]/)[0];
+      _city = _city ? _city.charAt(0).toUpperCase() + _city.slice(1).toLowerCase() : "Ciudad";
+      a.download = `${_dateStr} Cargue de Contenido ${_siteName} ${_city}.xlsx`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -1714,23 +1733,39 @@ export default function Redactor() {
           const templateCell = templateData[key];
           const existingCell = existingSections[key];
 
-          // Columnas 1-2: etiquetas estructurales del template (H1, H2, etc.)
-          // Columnas 3+: contenido generado por IA — vacío salvo celdas de disclaimer
+          // Columnas 0-2: etiquetas estructurales del template (H1, H2, H3, Bloque, etc.)
+          // Columnas 3+: contenido IA — vacío salvo disclaimer y celdas de título (H1/H2/H3)
           const [rowStr, colStr] = key.split("-");
           const col = parseInt(colStr);
+          // Soportar templates con propiedad "text" (create_template_from_config) o "value"
+          const templateText = templateCell?.text || templateCell?.value || "";
           let fallback = "";
+          let isTitleOrDisclaimer = false;
           if (col >= 3) {
             const labelCell = templateData[`${rowStr}-2`];
-            const label = (labelCell?.text || "").toLowerCase();
-            if (label.includes("disclaimer")) {
-              fallback = templateCell?.text || "";
+            const label = (labelCell?.text || labelCell?.value || "").toLowerCase();
+            isTitleOrDisclaimer =
+              label.includes("disclaimer") ||
+              label === "h1" ||
+              label === "h2" ||
+              label.startsWith("h3");
+            if (isTitleOrDisclaimer) {
+              fallback = templateText;
             }
           } else {
-            fallback = templateCell?.text || "";
+            fallback = templateText;
           }
 
+          // Para celdas estructurales (col 0-2: sección, bloque, etiqueta H1/H2/H3),
+          // si el contenido guardado está vacío se usa el valor del template como fallback
+          // para evitar que labels como "H2"/"H3" queden vacíos y sean omitidos en el Excel.
+          const savedContent = existingCell?.content || "";
           mergedTableData[key] = {
-            content: existingCell ? existingCell.content : fallback,
+            content: col < 3
+              ? (savedContent || fallback)
+              : (isTitleOrDisclaimer
+                  ? (existingCell?.content || fallback)
+                  : (existingCell ? existingCell.content : "")),
           };
         });
 
@@ -3298,6 +3333,7 @@ export default function Redactor() {
                     }
 
                     // Actualizar la celda de descripción con el contenido generado
+                    let _capturedTableData = null; // captura el nuevo estado para el auto-save
                     const updateTableDataByBlock = (blockNumber, content) => {
                       console.log(
                         "🔍 updateTableDataByBlock recibió:",
@@ -3491,6 +3527,7 @@ export default function Redactor() {
                           }
                         }
 
+                        _capturedTableData = updates; // captura para auto-save
                         return updates;
                       });
                     };
@@ -3507,7 +3544,8 @@ export default function Redactor() {
                     }
 
                     // auto-save silencioso tras generación IA individual
-                    saveRedactorProgress(currentLP.id, tableDataRef.current, annotations)
+                    // Usa el estado capturado (no tableDataRef.current que es stale)
+                    saveRedactorProgress(currentLP.id, _capturedTableData || tableDataRef.current, annotations)
                       .catch(() => {});
 
                     // Restaurar botón

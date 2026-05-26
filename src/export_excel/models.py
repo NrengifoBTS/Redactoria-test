@@ -15,8 +15,9 @@ class BlockMetadata(BaseModel):
     startRow: int
     endRow: int
     titleRow: int
-    descRow: Optional[int] = None  
-    contentMapping: Optional[Dict[str, str]] = None  
+    descRow: Optional[int] = None
+    section_id: Optional[int] = None
+    contentMapping: Optional[Dict[str, str]] = None
 
 
 class TemplateConfig(BaseModel):
@@ -42,6 +43,7 @@ class ExportExcelRequest(BaseModel):
     template_config: TemplateConfig
     template_info: TemplateInfo
     cell_data: Optional[Dict[str, CellData]] = None  # Datos actualizados desde el frontend
+    lp_url_slug: Optional[str] = None  # Slug de la landing page para extraer la ciudad
 
 
 class ExportExcelResponse(BaseModel):

@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -n \"proxy\\\\|scripts\" \"C:/Users/Nicoll Rengifo/Documents/Redactoria/frontend/auth-app/package.json\" | head -15)",
+      "Read(//c/Users/Nicoll Rengifo/Documents/Redactoria/frontend/auth-app/**)",
+      "Bash(pip install *)"
+    ]
+  }
+}

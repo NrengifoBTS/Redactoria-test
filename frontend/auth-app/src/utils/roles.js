@@ -5,6 +5,7 @@ export const ADMIN_USER_IDS = [
   "152c46be-e2f4-48da-86b1-592af570624a",
   "b43f1d04-f339-4cf9-8e4e-4f127f12af5a",
   "2fd1e540-40be-42cf-9d2b-693b0d3132af",
+  "4007b1aa-30a9-4167-8535-639180f8fbc4",
 ];
 
 export const EDITOR_USER_IDS = [

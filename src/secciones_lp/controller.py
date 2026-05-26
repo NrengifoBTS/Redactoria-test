@@ -1,5 +1,5 @@
 #redactoria/src/secciones_lp/controller.py
-from fastapi import APIRouter, status
+from fastapi import APIRouter, status, BackgroundTasks
 from typing import List
 from uuid import UUID
 
@@ -7,6 +7,8 @@ from ..database.core import DbSession
 from . import models
 from . import service
 from ..auth.service import CurrentUser
+from ..logging_service import ria_v2_service
+from ..entities.landing_page import LandingPage
 
 router = APIRouter(
     prefix="/secciones-lp",
@@ -46,9 +48,37 @@ def update_cell_content(db: DbSession, landing_page_id: UUID, cell_update: model
     return service.update_cell_content(current_user, db, landing_page_id, cell_update)
 
 @router.post("/landing-page/{landing_page_id}/bulk-update", response_model=List[models.SeccionLPResponse])
-def bulk_update_secciones(db: DbSession, landing_page_id: UUID, bulk_request: models.BulkUpdateSectionsRequest, current_user: CurrentUser):
-    """Actualizar múltiples secciones de una vez (auto-guardado del redactor)"""
-    return service.bulk_update_secciones(current_user, db, landing_page_id, bulk_request)
+def bulk_update_secciones(
+    db: DbSession,
+    landing_page_id: UUID,
+    bulk_request: models.BulkUpdateSectionsRequest,
+    current_user: CurrentUser,
+    background_tasks: BackgroundTasks,
+):
+    """Actualizar múltiples secciones de una vez (guardado general del redactor)"""
+    result = service.bulk_update_secciones(current_user, db, landing_page_id, bulk_request)
+
+    # ── RIA-V2: loguear el guardado real en background ──
+    landing_page = db.query(LandingPage).filter(LandingPage.id == landing_page_id).first()
+    if landing_page:
+        sections_data = [
+            {
+                "cell_position": s.cell_position,
+                "content":       s.content,
+                "section_type":  s.section_type,
+            }
+            for s in bulk_request.sections
+        ]
+        background_tasks.add_task(
+            ria_v2_service.log_bulk_save,
+            db            = db,
+            user_id       = current_user.get_uuid(),
+            landing_page_id = landing_page_id,
+            proyecto_id   = landing_page.proyecto_id,
+            sections_saved = sections_data,
+        )
+
+    return result
 
 @router.get("/landing-page/{landing_page_id}/cell/{cell_position}", response_model=models.SeccionLPResponse)
 def get_seccion_by_cell(db: DbSession, landing_page_id: UUID, cell_position: str, current_user: CurrentUser):

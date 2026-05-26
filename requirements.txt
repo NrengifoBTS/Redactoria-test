@@ -12,6 +12,7 @@ python-multipart
 email-validator
 requests
 openpyxl
+xlsxwriter
 beautifulsoup4
 spacy
 es_core_news_sm @ https://github.com/explosion/spacy-models/releases/download/es_core_news_sm-3.7.0/es_core_news_sm-3.7.0.tar.gz

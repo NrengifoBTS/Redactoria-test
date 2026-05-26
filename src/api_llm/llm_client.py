@@ -33,7 +33,7 @@ class LLMClient:
         self.session.headers.update({"Content-Type": "application/json"})
         self.connect_timeout = float(os.getenv("LM_STUDIO_CONNECT_TIMEOUT", "3"))
         self.read_timeout = float(os.getenv("LM_STUDIO_READ_TIMEOUT", "600"))
-        self.cooldown_sec = int(os.getenv("LM_STUDIO_DOWN_COOLDOWN_SEC", "20"))
+        self.cooldown_sec = int(os.getenv("LM_STUDIO_DOWN_COOLDOWN_SEC", "10"))
         self._down_until = 0.0
         self.last_call_success = False
         self.last_error = ""

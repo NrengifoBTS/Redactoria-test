@@ -5,7 +5,8 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 from typing import Dict, Any, List
 from src.auth.models import TokenData
-from src.core.content_generator import ContentGenerator, _FAV_CITY_DEFAULTS  
+from src.core.content_generator import ContentGenerator, _FAV_CITY_DEFAULTS
+from src.core.generators.viajemos_generator import ViajemosGenerator
 from src.utils.file_utils import FileHandler
 from src.utils.text_utils import TextProcessor  
 from . import models
@@ -475,7 +476,7 @@ class IAService:
             logging.info(f"Generando bloque '{block_type}' para LP {landing_page_id}")
 
             brand = (request.brand or "mcr").lower()
-            generator = ContentGenerator(brand=brand)
+            generator = ViajemosGenerator(brand=brand, fast_mode=True) if brand in ("vjm", "viajemos") else ContentGenerator(brand=brand, fast_mode=True)
             raw_generated_content = ""
             additional_content = ""
             faq_questions_for_response: List[str] = []

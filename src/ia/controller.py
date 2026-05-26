@@ -9,6 +9,7 @@ from . import models
 from .service import IAService
 from ..auth.service import CurrentUser
 from ..logging_service.ai_logging import AILoggingService
+from ..logging_service import ria_v2_service
 from ..entities.landing_page import LandingPage
 from ..api_llm.llm_client import LLMClient
 
@@ -297,6 +298,18 @@ def _log_ai_generation_background(
         )
 
         print(f"[AI Logging] Successfully logged generation for {request.blockType} at {request.cellKey}")
+
+        # ── RIA-V2: loguear generación con texto limpio y número de intento ──
+        ria_v2_service.log_generation(
+            db               = db,
+            user_id          = current_user.get_uuid(),
+            landing_page_id  = landing_page_id,
+            proyecto_id      = landing_page.proyecto_id,
+            cell_position    = request.cellKey,
+            block_type       = request.blockType or "unknown",
+            processed_output = response.dict(),
+            ai_generation_id = None,
+        )
 
     except Exception as e:
         print(f"[AI Logging] Error logging generation: {str(e)}")

@@ -1,7 +1,6 @@
 import re
 import logging
 import random
-import time
 from typing import List, Optional
 
 from src.api_llm.llm_client import LLMClient, TEMP_CREATIVE, TEMP_BALANCED, TEMP_PRECISE
@@ -37,9 +36,6 @@ _SEMANTICA = (
     "- 'carro/carros': 29% de las menciones.\n"
     "- 'vehículo/vehículos': máximo 1 vez por texto.\n"
     "Verbos: Alquiler / Renta (alternar libremente).\n\n"
-    "KEYWORD OBLIGATORIA EN TODO TEXTO GENERADO:\n"
-    "Cada texto debe incluir al menos una vez alguna de estas palabras clave: "
-    "'alquiler', 'alquila', 'alquilar', 'renta', 'rentar'. Sin excepción.\n\n"
     "Palabras y frases ABSOLUTAMENTE PROHIBIDAS:\n"
     "- Automóvil, Flota.\n"
     "- 'cargos ocultos', 'gastos ocultos', 'pagos ocultos', 'costos ocultos', 'sin sorpresas'.\n"
@@ -187,55 +183,6 @@ class ContentGenerator:
     def brand_name(self) -> str:
         return "Viajemos" if self.brand in ("vjm", "viajemos") else "Miles Car Rental"
 
-    _VEHICLE_KW_MAP = {
-        "camioneta": ("camionetas", "camioneta"),
-        "pick-up": ("pick-up", "pick-up"),
-        "minivan": ("minivans", "minivan"),
-        "van": ("vans", "van"),
-        "suv": ("SUV", "SUV"),
-        "convertible": ("convertibles", "convertible"),
-        "compacto": ("compactos", "compacto"),
-        "eléctrico": ("eléctricos", "eléctrico"),
-    }
-
-    def _extract_vehicle_keyword(self, tit_seo: str) -> str:
-        """Extrae el tipo de vehículo del título SEO; devuelve '' si es genérico (autos/carros)."""
-        t = (tit_seo or "").lower()
-        checks = [
-            (r"\bcamionetas?\b", "camioneta"),
-            (r"\bpick-?ups?\b", "pick-up"),
-            (r"\bminivans?\b", "minivan"),
-            (r"\bvans?\b", "van"),
-            (r"\bsuv\b", "suv"),
-            (r"\bconvertibles?\b", "convertible"),
-            (r"\bcompactos?\b", "compacto"),
-            (r"\beléctricos?\b", "eléctrico"),
-            (r"\belectricos?\b", "eléctrico"),
-        ]
-        for pattern, kw in checks:
-            if re.search(pattern, t):
-                return kw
-        return ""
-
-    def _apply_vehicle_kw(self, title: str, vehicle_kw: str) -> str:
-        """Reemplaza 'autos'/'carros' por el keyword de vehículo en un título."""
-        if not vehicle_kw or not title:
-            return title
-        plural, singular = self._VEHICLE_KW_MAP.get(vehicle_kw, (vehicle_kw + "s", vehicle_kw))
-        result = re.sub(r"\bautos\b", plural, title, flags=re.IGNORECASE)
-        result = re.sub(r"\bcarros\b", plural, result, flags=re.IGNORECASE)
-        result = re.sub(r"\bauto\b", singular, result, flags=re.IGNORECASE)
-        result = re.sub(r"\bcarro\b", singular, result, flags=re.IGNORECASE)
-        return result
-
-    def _fix_tit_vehicle_kw(self, pipe_output: str, vehicle_kw: str) -> str:
-        """Aplica keyword de vehículo a todos los campos tit* en el output pipe. Solo títulos."""
-        if not vehicle_kw or not pipe_output:
-            return pipe_output
-        def replacer(m):
-            return m.group(1) + self._apply_vehicle_kw(m.group(2), vehicle_kw) + "|"
-        return re.sub(r"(\|tit(?:_\w+)?\s*:\s*)([^|]+)(\|)", replacer, pipe_output)
-
     def sanitize_city_name(self, raw_city: str) -> str:
         """Normaliza etiquetas de ciudad para evitar frases SEO largas como títulos H3."""
         c = (raw_city or "").strip()
@@ -274,157 +221,12 @@ class ContentGenerator:
 
         return c
 
-    def _has_rental_keyword(self, text: str) -> bool:
-        return bool(re.search(r"\b(?:alquil\w*|rent\w*)\b", text or "", flags=re.IGNORECASE))
-
-    def _fav_city_desc_signature(self, desc: str) -> str:
-        base = re.sub(r"[^a-záéíóúñ0-9\s]", "", (desc or "").lower())
-        return re.sub(r"\s+", " ", base).strip()
-
-    def _fav_city_desc_opening(self, desc: str, words: int = 4) -> str:
-        tokens = re.findall(r"[a-záéíóúñ0-9]+", (desc or "").lower())
-        return " ".join(tokens[:words])
-
-    def _is_valid_fav_city_desc(self, desc: str) -> bool:
-        clean_desc = re.sub(r"\s+", " ", (desc or "").strip())
-        word_count = len(clean_desc.split()) if clean_desc else 0
-        return 25 <= word_count <= 30 and self._has_rental_keyword(clean_desc)
-
-    def _generate_single_fav_city_desc(self, nuevo_tema: str, city: str, highlight: str,
-                                       used_descs: List[str], used_openings: List[str]) -> str:
-        used_descs_text = " / ".join(used_descs[-6:]) if used_descs else "ninguna todavía"
-        used_openings_text = " / ".join(used_openings[-6:]) if used_openings else "ninguna todavía"
-        city_lower = city.lower()
-        _banned_opener = re.compile(
-            r"^(en\s+\w|explora\b|descubre\b|descubrir\b|visita\b|conoce\b)",
-            re.IGNORECASE,
-        )
-        _brand_tokens = {"viajemos", "miles", "mcr", "milestours"}
-
-        def _is_fresh(c: str) -> bool:
-            cl = c.lower()
-            if cl.startswith(city_lower):
-                return False
-            if _banned_opener.match(c):
-                return False
-            if any(b in cl for b in _brand_tokens):
-                return False
-            return True
-
-        prompt = (
-            f"Tema: {nuevo_tema}\n"
-            f"Ciudad: {city}\n"
-            f"Referencia local: {highlight}\n"
-            "Genera SOLO una descripción para esta ciudad en formato |desc: ...|.\n"
-            "REGLAS OBLIGATORIAS:\n"
-            "- EXACTAMENTE 25 a 30 palabras.\n"
-            "- Menciona la ciudad una sola vez. NUNCA la uses como primera palabra.\n"
-            "- PROHIBIDO empezar con: el nombre de la ciudad, 'En [ciudad]', 'Explora', 'Descubre', 'Visita', 'Conoce'.\n"
-            "- PROHIBIDO mencionar marcas comerciales (Viajemos, Miles, MCR ni similares).\n"
-            "- Incluye una keyword de alquiler o renta de forma orgánica.\n"
-            "- PROHIBIDO repetir apertura ya usada.\n"
-            f"- Aperturas ya usadas: {used_openings_text}.\n"
-            f"- Descripciones ya usadas: {used_descs_text}.\n"
-            "- Varía la estructura: usa perspectivas, sensaciones, rutas, actividades o atractivos del lugar.\n"
-            "EJEMPLOS de aperturas creativas (no copies literalmente, úsalos de guía):\n"
-            "  'Sus calles combinan historia y modernidad...'\n"
-            "  'Recorrer sus playas con un auto rentado...'\n"
-            "  'La vida nocturna y las rutas costeras de...'\n"
-            "  'Cada kilómetro desde su centro histórico...'\n"
-            "  'Con un carro de alquiler, llegar a sus miradores...'\n"
-            "  'Ideal para recorridos urbanos y escapadas cercanas...'\n"
-            "  'Un destino donde las rutas panorámicas...'\n"
-            "  'Moverse por su zona costera con un auto rentado...'\n"
-            "Salida obligatoria:\n"
-            "|desc: redacción|"
-        )
-        best_candidate = ""
-        for _ in range(5):
-            raw = self._call(prompt, temperature=TEMP_CREATIVE)
-            candidate = (parse_fields(raw).get("desc") or "").strip()
-            if not candidate:
-                candidate = re.sub(r"<think>.*?</think>", "", raw or "", flags=re.DOTALL).strip()
-                candidate = re.sub(r"^\|?\s*desc\s*:\s*", "", candidate, flags=re.IGNORECASE)
-                candidate = candidate.replace("|", " ").strip()
-                candidate = re.sub(r"\s+", " ", candidate)
-            if candidate and not best_candidate:
-                best_candidate = candidate
-            if not self._is_valid_fav_city_desc(candidate) or not _is_fresh(candidate):
-                continue
-            signature = self._fav_city_desc_signature(candidate)
-            opening = self._fav_city_desc_opening(candidate)
-            if signature in used_descs or opening in used_openings:
-                continue
-            return candidate
-
-        relaxed_prompt = (
-            f"Tema: {nuevo_tema}\n"
-            f"Ciudad: {city}\n"
-            f"Referencia local: {highlight}\n"
-            "Escribe una sola oración en español neutro latinoamericano.\n"
-            "REGLAS:\n"
-            "- Entre 25 y 30 palabras.\n"
-            "- Menciona la ciudad una sola vez. NUNCA la uses como primera palabra.\n"
-            "- NO empieces con 'En [ciudad]', 'Explora', 'Descubre', 'Visita' ni con el nombre de la ciudad.\n"
-            "- NO menciones marcas comerciales.\n"
-            "- Incluye una keyword de alquiler o renta de forma orgánica.\n"
-            "- No repitas aperturas ni ideas ya usadas.\n"
-            f"- Aperturas usadas: {used_openings_text}.\n"
-            f"- Descripciones usadas: {used_descs_text}.\n"
-            "- No uses formato pipe ni etiquetas. Devuelve solo la oración final."
-        )
-        for _ in range(2):
-            raw = self._call(relaxed_prompt, temperature=TEMP_CREATIVE)
-            candidate = re.sub(r"<think>.*?</think>", "", raw or "", flags=re.DOTALL).strip()
-            candidate = candidate.replace("|", " ").strip()
-            candidate = re.sub(r"\s+", " ", candidate)
-            if candidate and not best_candidate:
-                best_candidate = candidate
-            if not self._is_valid_fav_city_desc(candidate) or not _is_fresh(candidate):
-                continue
-            signature = self._fav_city_desc_signature(candidate)
-            opening = self._fav_city_desc_opening(candidate)
-            if signature in used_descs or opening in used_openings:
-                continue
-            return candidate
-        return best_candidate
-
-    def _generate_batch_fav_city_descs(self, nuevo_tema: str, batch_items: List[tuple],
-                                       used_descs: List[str], used_openings: List[str]) -> dict:
-        if not batch_items:
-            return {}
-        used_descs_text = " / ".join(used_descs[-8:]) if used_descs else "ninguna todavía"
-        used_openings_text = " / ".join(used_openings[-8:]) if used_openings else "ninguna todavía"
-        items_text = "\n".join(
-            [f"- desc_{idx} para {city} (contexto: {highlight})" for idx, city, highlight in batch_items]
-        )
-        expected = "\n".join([f"|desc_{idx}: redacción|" for idx, _, _ in batch_items])
-        prompt = (
-            f"Tema: {nuevo_tema}\n"
-            "Genera SOLO descripciones faltantes para ciudades, en formato pipe exacto.\n"
-            "REGLAS:\n"
-            "- Cada desc_i: 25 a 30 palabras.\n"
-            "- Cada desc_i debe contener una keyword general de alquiler o renta de forma orgánica.\n"
-            "- No repitas ideas entre ciudades ni arranques iguales.\n"
-            f"- Aperturas usadas: {used_openings_text}.\n"
-            f"- Descripciones usadas: {used_descs_text}.\n"
-            f"Bloques a generar:\n{items_text}\n"
-            "Salida obligatoria sin texto extra:\n"
-            f"{expected}"
-        )
-        raw = self._call(prompt, temperature=TEMP_CREATIVE)
-        return parse_fields(raw) or {}
-
     # ── Utilidades internas ────────────────────────────────────────────────────
 
     def _call(self, prompt: str, temperature: float = TEMP_BALANCED,
               retries: int = 2) -> str:
         """Llama al modelo con reintentos. Devuelve raw para parseo posterior."""
         for attempt in range(retries + 1):
-            wait = self.llm._down_until - time.time()
-            if wait > 0:
-                log.info("LLM en cooldown, esperando %.0fs (intento %d/%d)...", wait, attempt + 1, retries + 1)
-                time.sleep(wait + 0.5)
             raw = self.llm.generate(prompt, self.system_message, temperature=temperature)
             if raw and raw.strip():
                 return raw
@@ -505,7 +307,6 @@ class ContentGenerator:
                 "- La descripción habla del destino o de la experiencia de viaje, NO de agencias específicas ni beneficios técnicos.\n"
                 "- PROHIBIDO en la descripción: nombres de agencias (Alamo, Dollar, Avis, Budget, etc.), "
                 "kilómetros ilimitados, asistencia en carretera, depósito, o cualquier beneficio técnico.\n"
-                "- Usa 'alquiler de autos' o 'renta de autos/carros' de forma orgánica en la descripción.\n"
             )
         else:
             rules = (
@@ -513,7 +314,6 @@ class ContentGenerator:
                 "- El H1 puede ser el título base o una variante SEO levemente mejorada.\n"
                 "- La descripción: EXACTAMENTE 15 a 20 palabras.\n"
                 "- Tono cercano y dinámico.\n"
-                "- Usa 'alquiler de autos' o 'renta de carros/autos' de forma orgánica en la descripción.\n"
             )
         prompt = (
             f"{examples}"
@@ -549,7 +349,6 @@ class ContentGenerator:
 
     def generate_fleet(self, tit_seo: str, nuevo_tema: str) -> str:
         """B2 — Fleet: descripción principal + variantes ip_usa e ip_bra (80-130 palabras)."""
-        vehicle_kw = self._extract_vehicle_keyword(tit_seo)
         location = self._extract_location_from_title(nuevo_tema)
         import hashlib as _hfleet_tit
         _fleet_tit_variants = [
@@ -559,7 +358,7 @@ class ContentGenerator:
             f"Opciones de renta de autos en {location}",
         ]
         _tit_idx = int(_hfleet_tit.md5(nuevo_tema.encode()).hexdigest(), 16) % len(_fleet_tit_variants)
-        tit = self._apply_vehicle_kw(_fleet_tit_variants[_tit_idx], vehicle_kw)
+        tit = _fleet_tit_variants[_tit_idx]
         import hashlib as _hfleet
         _fleet_angles = [
             "prioriza practicidad para viajes con agenda intensa",
@@ -590,7 +389,6 @@ class ContentGenerator:
             f"- Angulo de redaccion: {angle}.\n"
             "- Cierre con llamado a comparar y reservar.\n"
             f"- Debe incluir EXACTAMENTE esta frase de beneficios: {_ben_latam} y mucho más.\n"
-            "- Usa orgánicamente 'alquiler de autos' o 'renta de autos/carros' al menos una vez en el texto.\n"
             "- Devuelve SOLO: |desc: ...|"
         )
 
@@ -689,9 +487,8 @@ class ContentGenerator:
 
     def generate_deals(self, tit_seo: str, nuevo_tema: str) -> str:
         """Deals — sección de ofertas: descripción H2 + variantes ip_usa e ip_bra (80-85 palabras)."""
-        vehicle_kw = self._extract_vehicle_keyword(tit_seo)
         location = self._extract_location_from_title(nuevo_tema)
-        tit = self._apply_vehicle_kw(f"Ofertas de alquiler de autos en {location}", vehicle_kw)
+        tit = f"Ofertas de alquiler de autos en {location}"
         import hashlib as _hdeals
         _deals_angles = [
             "resalta el ahorro y las tarifas competitivas para distintas categorías",
@@ -813,7 +610,6 @@ class ContentGenerator:
             "Ejemplos válidos: 'Opiniones sobre alquiler de autos en Miami' / "
             "'Reseñas de clientes que rentaron en Orlando, FL'.\n"
             f"- desc_h2: 35 a 40 palabras. {tono.capitalize()}.\n"
-            "- Usa 'alquiler' o 'renta' de forma orgánica en el desc_h2.\n"
             "Genera:\n"
             "<think>aquí tus pensamientos</think>\n"
             "|tit: H2 para sección de reseñas|\n"
@@ -825,90 +621,79 @@ class ContentGenerator:
 
     def generate_agencies(self, tit_seo: str, nuevo_tema: str) -> str:
         """B3 — Agencias: H2 propio (50-65 palabras) + H3 (20-35 palabras)."""
-        vehicle_kw = self._extract_vehicle_keyword(tit_seo)
         brand_name = self.brand_name
         location = self._extract_location_from_title(nuevo_tema)
 
         if self.brand == "mcr":
             examples = (
-                "Ejemplos de referencia (desc_h2 y desc_h3: copy persuasivo que convence al cliente de rentar con Miles Car Rental):\n\n"
+                "Ejemplos de referencia (desc_h2: Miles Car Rental como plataforma que conecta al viajero con agencias líderes):\n\n"
                 "Ejemplo 1:\n"
                 "tit: Agencias de alquiler de autos en Miami\n"
-                "desc_h2: Reserva tu alquiler de autos en Miami con Miles Car Rental y accede en un solo lugar a Avis, Hertz, Alamo, Budget y más. "
-                "Compara tarifas, elige tu vehículo y confirma tu reserva en minutos. "
-                "Más de 15 años respaldan cada servicio para que viajes con total tranquilidad.\n"
-                "desc_h3: ¿Te preocupa elegir bien? Con más de 15 años en el mercado, Miles Car Rental conecta tu reserva con las agencias más confiables. Renta hoy y viaja sin dudas.\n\n"
+                "desc_h2: Con Miles Car Rental tienes acceso directo a las mejores agencias de renta en Miami: Avis, Alamo, Hertz, Budget y más. "
+                "Más de 15 años conectando viajeros con tarifas competitivas y el respaldo de marcas reconocidas. "
+                "Compara, elige y reserva con total confianza.\n"
+                "desc_h3: Reserva con Seguro de Viaje Gratis para extranjeros, kilómetros ilimitados y asistencia en carretera incluida.\n\n"
                 "Ejemplo 2:\n"
                 "tit: Las mejores compañías de alquiler de autos en Orlando\n"
-                "desc_h2: No pierdas tiempo buscando: con Miles Car Rental tienes en un solo lugar las agencias de renta más reconocidas de Orlando. "
-                "Hertz, Enterprise, National, Alamo y más te esperan. "
-                "Elige con confianza y reserva hoy con el respaldo de 15 años en el mercado.\n"
-                "desc_h3: Tu próxima aventura en Orlando empieza con una buena decisión. Reserva tu alquiler de autos con Miles Car Rental y maneja con la tranquilidad de estar en buenas manos.\n\n"
+                "desc_h2: Miles Car Rental conecta tu reserva con Hertz, Enterprise, National, Alamo y otras agencias líderes en Orlando. "
+                "Compara precios, categorías y coberturas en un solo lugar, con tarifas reales y sin sorpresas. "
+                "15 años de experiencia respaldan cada reserva.\n"
+                "desc_h3: Cada reserva incluye kilómetros ilimitados, asistencia básica en carretera y modificaciones flexibles sin cargo.\n\n"
                 "Ejemplo 3:\n"
                 "tit: Compañías de renta de carros en Colombia\n"
-                "desc_h2: Renta tu auto en Colombia a través de Miles Car Rental y asegura el mejor precio con Avis, Hertz, Budget y otras agencias líderes. "
-                "Todo desde un mismo sitio, sin complicaciones. Elige, reserva y viaja con seguridad.\n"
-                "desc_h3: No busques más opciones: con Miles Car Rental tienes el respaldo de las mejores agencias en un solo clic. Reserva ahora y viaja sin complicaciones.\n\n"
+                "desc_h2: A través de Miles Car Rental accedes a las agencias de alquiler más importantes de Colombia: Avis, Hertz, Budget y más. "
+                "Compara tarifas y coberturas desde un solo sitio, elige el vehículo ideal para tu ruta y reserva con total seguridad.\n"
+                "desc_h3: Cobertura básica incluida, kilometraje ilimitado y atención especializada en cada punto de entrega.\n\n"
             )
             rules = (
                 "REGLAS ESTRICTAS:\n"
                 "- tit: H2 específico para sección de agencias. Varía entre: "
                 "'Agencias de alquiler de autos en X' / 'Las mejores compañías de renta en X' / "
                 "'Compañías de renta de carros en X' / 'Agencias líderes de alquiler de autos en X'.\n"
-                f"- desc_h2: 50 a 65 palabras. Copy PERSUASIVO cuyo objetivo es convencer al cliente de rentar a través de {brand_name}. "
-                "Menciona agencias disponibles (Avis, Budget, Hertz, Alamo, Enterprise, National, etc.) como argumento de valor. "
-                f"Máximo 1 mención de {brand_name}. "
-                "PROHIBIDO listar beneficios o describir características: el texto debe invitar a la acción y cerrar la decisión del cliente. "
-                "Tono serio y confiable. Sin exclamaciones.\n"
-                f"- desc_h3: 20 a 35 palabras. Copy PROMOCIONAL con gancho emocional o pregunta retórica que invite a reservar con {brand_name}. "
-                "PROHIBIDO listar beneficios o indicaciones (kilómetros ilimitados, coberturas, etc.). "
-                "Debe convencer, no informar. Tono profesional. Sin exclamaciones.\n"
-                "- El desc_h2 debe contener 'alquiler de autos' o 'renta de autos/carros' de forma orgánica.\n"
+                f"- desc_h2: 50 a 65 palabras. Posiciona {brand_name} como plataforma con más de 15 años que conecta al viajero "
+                "con múltiples agencias (Avis, Budget, Hertz, Alamo, Enterprise, National, etc.). "
+                f"Máximo 1 mención de {brand_name} en el texto. "
+                "Tono serio y confiable. Evitar exclamaciones y frases genéricas.\n"
+                "- desc_h3: 20 a 35 palabras. Resalta 1 o 2 beneficios concretos del servicio. Tono profesional.\n"
             )
         else:
             examples = (
-                "Ejemplos de referencia (desc_h2 y desc_h3: copy persuasivo que convence al cliente de rentar con Viajemos):\n\n"
+                "Ejemplos de referencia (desc_h2: propuesta de valor de Viajemos como plataforma que da acceso a las mejores agencias):\n\n"
                 "Ejemplo 1:\n"
                 "tit: Agencias de renta de autos en Miami\n"
-                "desc_h2: Reserva tu alquiler de autos en Miami con Viajemos y elige entre las mejores agencias del mercado: Avis, Budget, Hertz y Alamo. "
-                "Compara tarifas en segundos, sin comisiones ocultas, y asegura tu vehículo al mejor precio. "
-                "El próximo movimiento es tuyo: reserva hoy.\n"
-                "desc_h3: ¿Te preocupa elegir bien? En Viajemos tienes las mejores agencias en un solo lugar. Renta un auto en Miami con nosotros y empieza tu viaje con total confianza.\n\n"
+                "desc_h2: En Viajemos comparas en segundos las tarifas de Avis, Budget, Hertz, Alamo y más agencias líderes. "
+                "Sin comisiones ocultas, con disponibilidad en tiempo real y el respaldo de las marcas más confiables del mercado. "
+                "Más opciones, mejores precios, un solo lugar para decidir.\n"
+                "desc_h3: Viaja tranquilo con Seguro de Viaje Gratis para extranjeros, kilómetros ilimitados y asistencia en carretera incluida.\n\n"
                 "Ejemplo 2:\n"
                 "tit: Las mejores compañías de alquiler de autos en Orlando\n"
-                "desc_h2: No sigas buscando: en Viajemos tienes acceso a las agencias de renta más reconocidas de Orlando, "
-                "como Hertz, Enterprise, National y Alamo. Compara, decide con confianza y reserva en minutos. "
-                "Aquí está tu mejor opción de alquiler de autos.\n"
-                "desc_h3: ¡Vive tu aventura en Orlando como se debe! Reserva tu alquiler de autos con Viajemos y súbete al volante con precios imbatibles y total tranquilidad.\n\n"
+                "desc_h2: Viajemos te conecta con las agencias de alquiler más reconocidas de Orlando: Hertz, Enterprise, National y Alamo, entre otras. "
+                "Compara precios, tipos de vehículo y coberturas desde un mismo sitio, elige con confianza y reserva en minutos. "
+                "Tu viaje empieza con la mejor decisión.\n"
+                "desc_h3: Reserva con conductor adicional sin costo extra y modificaciones flexibles para que tu itinerario siempre esté bajo control.\n\n"
                 "Ejemplo 3:\n"
                 "tit: Compañías de renta de carros en Colombia\n"
-                "desc_h2: Con Viajemos encuentras al instante las agencias de renta más importantes del país: Avis, Hertz, Budget y más. "
-                "Sin vueltas, sin sorpresas. Elige tu auto, confirma tu reserva y viaja con la seguridad de haber tomado la mejor decisión.\n"
-                "desc_h3: Tu ruta en Colombia es más fácil con Viajemos. Elige el carro ideal, confirma en minutos y lleva tu viaje al siguiente nivel. ¡Reserva ahora!\n\n"
+                "desc_h2: Con Viajemos tienes acceso directo a las agencias de alquiler más importantes del país. "
+                "Compara tarifas de Avis, Hertz, Budget y más en un solo clic, sin sorpresas ni costos adicionales. "
+                "Elige el vehículo ideal para tu destino y reserva con total seguridad.\n"
+                "desc_h3: Disfruta de beneficios exclusivos: cobertura básica incluida, kilometraje ilimitado y atención al viajero en todo momento.\n\n"
             )
             rules = (
                 "REGLAS ESTRICTAS:\n"
                 "- tit: H2 específico para sección de agencias. Varía entre: "
                 "'Agencias de renta de autos en X' / 'Las mejores compañías de alquiler en X' / "
                 "'Compañías de renta de carros en X' / 'Agencias líderes de alquiler de autos en X'.\n"
-                f"- desc_h2: 50 a 65 palabras. Copy PERSUASIVO cuyo objetivo es convencer al cliente de rentar a través de {brand_name}. "
-                "Menciona agencias disponibles (Avis, Budget, Hertz, Alamo, Enterprise, National, etc.) como argumento de valor. "
-                f"Máximo 1 mención de {brand_name}. "
-                f"PROHIBIDO comentar beneficios o describir características: el texto debe invitar a la acción y cerrar la decisión del cliente. "
-                "Tono dinámico y propositivo. Puede usar imperativos o invitaciones directas.\n"
-                f"- desc_h3: 20 a 35 palabras. Copy PROMOCIONAL con gancho emocional, pregunta retórica o llamada a la acción directa que invite a reservar con {brand_name}. "
-                "PROHIBIDO listar beneficios o indicaciones (kilómetros ilimitados, coberturas, etc.). "
-                "Debe convencer, no informar. Tono dinámico y cercano. Puede usar exclamaciones.\n"
-                "- El desc_h2 debe contener 'alquiler de autos' o 'renta de autos/carros' de forma orgánica.\n"
+                f"- desc_h2: 50 a 65 palabras. Posiciona {brand_name} como plataforma que conecta al viajero con múltiples agencias "
+                "(Avis, Budget, Hertz, Alamo, Enterprise, National, etc.). "
+                f"Máximo 1 mención de {brand_name} en el texto. "
+                "Tono propuesta de valor, congruente con el tit. Evitar frases genéricas como 'te ofrecemos'.\n"
+                "- desc_h3: 20 a 35 palabras. Resalta 1 o 2 beneficios concretos del servicio.\n"
             )
 
-        vehicle_plural = self._VEHICLE_KW_MAP.get(vehicle_kw, (vehicle_kw + "s", vehicle_kw))[0] if vehicle_kw else ""
-        kw_rule = f"- En el campo tit usa '{vehicle_plural}' en lugar de 'autos'/'carros'.\n" if vehicle_kw else ""
         prompt = (
             f"{examples}"
             f"Nuevo tema: {nuevo_tema}, contexto LP: {tit_seo}\n\n"
             f"{rules}"
-            f"{kw_rule}"
             "- PROHIBIDO repetir literalmente los ejemplos.\n"
             "Genera OBLIGATORIAMENTE los tres campos:\n"
             "<think>aquí tus pensamientos</think>\n"
@@ -917,40 +702,38 @@ class ContentGenerator:
             "|desc_h3: redacción|"
         )
         raw = self._call(prompt, temperature=TEMP_CREATIVE)
-        tit_default = self._apply_vehicle_kw(f"Agencias de renta de autos — {nuevo_tema}", vehicle_kw)
-        result = self._fix_tit_vehicle_kw(self._parse_and_supervise(raw, tit_default=tit_default), vehicle_kw)
+        tit_default = f"Agencias de renta de autos — {nuevo_tema}"
+        result = self._parse_and_supervise(raw, tit_default=tit_default)
         fields = parse_fields(result)
         if not fields.get("desc_h2"):
             if self.brand == "mcr":
                 fields["desc_h2"] = (
-                    f"Reserva tu alquiler de autos en {location} con {brand_name} y accede en un solo lugar "
-                    "a Avis, Hertz, Alamo, Budget y más agencias líderes. "
-                    "Compara tarifas, elige tu vehículo y confirma tu reserva en minutos. "
-                    "Más de 15 años respaldan cada servicio para que viajes con total tranquilidad."
+                    f"Con {brand_name} tienes acceso a las mejores agencias de renta en {location}: "
+                    "Avis, Alamo, Hertz, Budget y más. "
+                    "Más de 15 años conectando viajeros con tarifas competitivas y el respaldo de marcas reconocidas. "
+                    "Compara y reserva con total confianza."
                 )
             else:
                 fields["desc_h2"] = (
-                    f"No sigas buscando: en {brand_name} tienes acceso a las agencias de renta más reconocidas de {location}, "
-                    "como Avis, Hertz, Budget y Alamo. "
-                    "Compara, decide con confianza y reserva en minutos. "
-                    "Aquí está tu mejor opción de alquiler de autos."
+                    f"En {brand_name} comparas las tarifas de Avis, Budget, Hertz, Alamo y más agencias en {location}. "
+                    "Sin comisiones ocultas, con disponibilidad en tiempo real y el respaldo de las marcas más confiables. "
+                    "Más opciones, mejores precios, un solo lugar para decidir."
                 )
         if not fields.get("desc_h3"):
             if self.brand == "mcr":
                 fields["desc_h3"] = (
-                    f"¿Te preocupa elegir bien? Con más de 15 años en el mercado, {brand_name} conecta "
-                    "tu reserva con las agencias más confiables. Renta hoy y viaja sin dudas."
+                    "Cada reserva incluye kilómetros ilimitados, Seguro de Viaje Gratis para extranjeros "
+                    "y asistencia básica en carretera."
                 )
             else:
                 fields["desc_h3"] = (
-                    f"¡Vive la experiencia de rentar sin complicaciones! En {brand_name} encuentras "
-                    "el auto ideal al mejor precio. Reserva hoy y empieza tu viaje con total confianza."
+                    "Viaja tranquilo con Seguro de Viaje Gratis para extranjeros, "
+                    "kilómetros ilimitados y asistencia en carretera incluida."
                 )
         return "\n".join(f"|{k}: {v}|" for k, v in fields.items())
 
     def generate_rentcompanies(self, tit_seo: str, nuevo_tema: str) -> str:
         """MCR rentcompanies — H2 de agencias de alquiler + descripción (80-85 palabras)."""
-        vehicle_kw = self._extract_vehicle_keyword(tit_seo)
         brand_name = self.brand_name
         location = self._extract_location_from_title(nuevo_tema)
         if self.brand == "mcr":
@@ -970,25 +753,21 @@ class ContentGenerator:
                 "con el respaldo de las marcas más confiables del mercado."
             )
             tono = f"posicionar {brand_name} como la mejor plataforma de comparación; mencionar agencias aliadas"
-        vehicle_plural = self._VEHICLE_KW_MAP.get(vehicle_kw, (vehicle_kw + "s", vehicle_kw))[0] if vehicle_kw else ""
-        kw_rule = f"- En el campo tit usa '{vehicle_plural}' en lugar de 'autos'/'carros'.\n" if vehicle_kw else ""
         prompt = (
             f"Ejemplo de referencia:\n{example}\n\n"
             f"Nuevo tema: {nuevo_tema}, contexto LP: {tit_seo}\n"
             "REGLAS:\n"
             "- tit: H2 específico para sección de agencias de renta. "
             "Ejemplos: 'Agencias de renta de autos en X' / 'Compañías de alquiler de autos en X'.\n"
-            f"{kw_rule}"
             f"- desc: 80 a 85 palabras. {tono.capitalize()}.\n"
-            "- Usa 'alquiler de autos' o 'renta de autos/carros' de forma orgánica en el desc.\n"
             "Genera:\n"
             "<think>aquí tus pensamientos</think>\n"
             "|tit: H2 para sección de agencias|\n"
             "|desc: redacción|"
         )
         raw = self._call(prompt, temperature=TEMP_BALANCED)
-        tit_default = self._apply_vehicle_kw(f"Agencias de alquiler de autos — {nuevo_tema}", vehicle_kw)
-        result = self._fix_tit_vehicle_kw(self._parse_and_supervise(raw, tit_default=tit_default), vehicle_kw)
+        tit_default = f"Agencias de alquiler de autos — {nuevo_tema}"
+        result = self._parse_and_supervise(raw, tit_default=tit_default)
         fields = parse_fields(result)
         if not fields.get("desc"):
             if self.brand == "mcr":
@@ -1007,19 +786,16 @@ class ContentGenerator:
 
     def generate_faq(self, tit_seo: str, nuevo_tema: str) -> str:
         """B4 — FAQs header: descripción introductoria H2 (40-60 palabras)."""
-        vehicle_kw = self._extract_vehicle_keyword(tit_seo)
         location = self._extract_location_from_title(nuevo_tema)
+        tit_default = f"Preguntas frecuentes sobre renta de autos en {location}"
         _tit_variants_faq = [
-            self._apply_vehicle_kw(f"Preguntas frecuentes sobre renta de autos en {location}", vehicle_kw),
-            self._apply_vehicle_kw(f"Todo lo que debes saber sobre el alquiler de autos en {location}", vehicle_kw),
-            self._apply_vehicle_kw(f"Resolvemos tus dudas sobre rentar un auto en {location}", vehicle_kw),
+            f"Preguntas frecuentes sobre renta de autos en {location}",
+            f"Todo lo que debes saber sobre el alquiler de autos en {location}",
+            f"Resolvemos tus dudas sobre rentar un auto en {location}",
         ]
-        tit_default = _tit_variants_faq[0]
         import hashlib as _hs
         tit_seo_clean = _hs.md5(nuevo_tema.encode()).hexdigest()
         tit_suggested = _tit_variants_faq[int(tit_seo_clean, 16) % len(_tit_variants_faq)]
-        vehicle_plural = self._VEHICLE_KW_MAP.get(vehicle_kw, (vehicle_kw + "s", vehicle_kw))[0] if vehicle_kw else ""
-        kw_rule = f"Usa '{vehicle_plural}' en lugar de 'autos'/'carros' en el tit. " if vehicle_kw else ""
         prompt = (
             "Ejemplo de referencia:\n"
             "tit: Preguntas frecuentes sobre renta de autos en Orlando, "
@@ -1027,7 +803,7 @@ class ContentGenerator:
             "Aquí respondemos las preguntas más frecuentes para que llegues preparado: "
             "desde requisitos y costos hasta las mejores agencias disponibles.\n\n"
             f"Nuevo tema: {nuevo_tema}\n"
-            f"REGLA: genera tit + desc. {kw_rule}El tit debe ser claro y orientado al usuario, NO incluir 'Landing Page' ni guiones. desc de 40 a 45 palabras. Usa 'alquiler de autos' o 'renta de autos/carros' de forma orgánica en el desc.\n"
+            "REGLA: genera tit + desc. El tit debe ser claro y orientado al usuario, NO incluir 'Landing Page' ni guiones. desc de 40 a 45 palabras.\n"
             f"Título sugerido para tit: {tit_suggested}\n"
             "Genera:\n"
             "<think>aquí tus pensamientos</think>\n"
@@ -1035,25 +811,23 @@ class ContentGenerator:
             "|desc: redacción|"
         )
         raw = self._call(prompt, temperature=TEMP_BALANCED)
-        return self._fix_tit_vehicle_kw(self._parse_and_supervise(raw, tit_default=tit_default), vehicle_kw)
+        return self._parse_and_supervise(raw, tit_default=tit_default)
 
-    @staticmethod
-    def _get_respuesta_requisitos_renta(location: str) -> str:
-        return (
-            f"Los requisitos generales para alquilar un auto en {location} son:\n\n"
-            "**\n\n"
-            "- Ser mayor de 25 años.*\n"
-            "- Licencia de conducción de tu país de origen vigente, con antigüedad mayor a un año y fecha de vencimiento impresa.\n"
-            "- Tarjeta de crédito a nombre del titular de la reserva con cupo disponible para cubrir el depósito de alquiler.\n"
-            "- Depósito de Garantía.\n"
-            "- Pasaporte vigente.\n"
-            "- Tiquetes aéreos (ida y vuelta).\n\n"
-            "**\n\n"
-            "*Algunas agencias permiten que el titular de la reserva tenga entre 21 y 24 años, por un pequeño precio adicional. "
-            "Es necesario que los documentos se presenten en formato físico al momento de retirar el auto de la agencia. "
-            "Además, ten presente que los requisitos pueden cambiar de acuerdo con tu país de origen, "
-            "te invitamos a consultar todos los detalles con nuestro Chatbot."
-        )
+    RESPUESTA_REQUISITOS_RENTA = (
+        "Los requisitos generales para alquilar un auto son: "
+        "** "
+        "- Ser mayor de 25 años.* "
+        "- Licencia de conducción de tu país de origen vigente, con antigüedad mayor a un año y fecha de vencimiento impresa. "
+        "- Tarjeta de crédito a nombre del titular de la reserva con cupo disponible para cubrir el depósito de alquiler. "
+        "- Depósito de Garantía. "
+        "- Pasaporte vigente. "
+        "- Tiquetes aéreos (ida y vuelta). "
+        "** "
+        "*Algunas agencias permiten que el titular de la reserva tenga entre 21 y 24 años, por un pequeño precio adicional. "
+        "Es necesario que los documentos se presenten en formato físico al momento de retirar el auto de la agencia. "
+        "Además, ten presente que los requisitos pueden cambiar de acuerdo con tu país de origen, "
+        "te invitamos a consultar todos los detalles con nuestro Chatbot."
+    )
 
     def _es_pregunta_requisitos_renta(self, pregunta: str) -> bool:
         p = pregunta.lower()
@@ -1082,7 +856,7 @@ class ContentGenerator:
             _seed = int(_hfaq.md5(f"{nuevo_tema}|{pregunta}|{i}".encode()).hexdigest(), 16)
 
             if self._es_pregunta_requisitos_renta(pregunta):
-                faq_responses[f"faq_{i}"] = self._get_respuesta_requisitos_renta(location)
+                faq_responses[f"faq_{i}"] = self.RESPUESTA_REQUISITOS_RENTA
                 continue
 
             if "semana" in p:
@@ -1221,10 +995,9 @@ class ContentGenerator:
 
     def generate_car_rental(self, tit_seo: str, nuevo_tema: str) -> str:
         """B5 — Car Rental header: descripción introductoria (60-85 palabras)."""
-        vehicle_kw = self._extract_vehicle_keyword(tit_seo)
         location = self._extract_location_from_title(nuevo_tema)
         idx = sum(ord(c) for c in location) % len(self._CAR_RENTAL_TITULOS)
-        tit_sugerido = self._apply_vehicle_kw(self._CAR_RENTAL_TITULOS[idx].format(loc=location), vehicle_kw)
+        tit_sugerido = self._CAR_RENTAL_TITULOS[idx].format(loc=location)
 
         if self.brand == "mcr":
             example = ""
@@ -1271,172 +1044,250 @@ class ContentGenerator:
             "IMPORTANTE: Solo usa | al inicio y final, NUNCA dentro del contenido."
         )
         raw = self._call(prompt, temperature=TEMP_CREATIVE)
-        return self._fix_tit_vehicle_kw(self._parse_and_supervise(raw, tit_default=tit_sugerido), vehicle_kw)
-
-    def _generate_single_car_type_desc(self, tipo: str, location: str, nuevo_tema: str,
-                                        word_range: tuple, used_descs: List[str],
-                                        used_openings: List[str]) -> str:
-        min_w, max_w = word_range
-        _car_highlights = {
-            "económico": "bajo consumo de combustible y fácil estacionamiento",
-            "camioneta": "capacidad de carga y tracción en distintos terrenos",
-            "camionetas": "capacidad de carga y tracción en distintos terrenos",
-            "convertible": "conducción al aire libre y rutas panorámicas",
-            "convertibles": "conducción al aire libre y rutas panorámicas",
-            "lujo": "acabados premium y mayor confort en cada trayecto",
-            "van": "espacio para grupos y equipaje abundante",
-            "eléctrico": "cero emisiones y conducción silenciosa",
-            "eléctricos": "cero emisiones y conducción silenciosa",
-            "suv": "altura, amplitud y versatilidad para distintas rutas",
-            "compacto": "agilidad urbana y fácil manejo en la ciudad",
-            "intermedio": "equilibrio entre espacio y maniobrabilidad",
-        }
-        tipo_lower = tipo.lower()
-        highlight = next(
-            (v for k, v in _car_highlights.items() if k in tipo_lower),
-            "características específicas de este segmento",
-        )
-        _brand_tokens = {"viajemos", "miles", "mcr", "milestours"}
-        used_descs_text = " / ".join(used_descs[-6:]) if used_descs else "ninguna todavía"
-        used_openings_text = " / ".join(used_openings[-6:]) if used_openings else "ninguna todavía"
-
-        def _is_valid(c: str) -> bool:
-            words = c.split()
-            if not (min_w <= len(words) <= max_w):
-                return False
-            cl = c.lower()
-            if any(b in cl for b in _brand_tokens):
-                return False
-            return self._has_rental_keyword(c)
-
-        prompt = (
-            f"Tema: {nuevo_tema}\n"
-            f"Destino: {location}\n"
-            f"Tipo de auto: {tipo}\n"
-            f"Característica clave: {highlight}\n"
-            f"Genera SOLO una descripción de {min_w} a {max_w} palabras para este tipo de auto en formato |desc: ...|.\n"
-            "REGLAS OBLIGATORIAS:\n"
-            f"- EXACTAMENTE entre {min_w} y {max_w} palabras. La oración debe terminar con sentido completo.\n"
-            f"- NUNCA empieces con el nombre del tipo '{tipo}'.\n"
-            "- PROHIBIDO mencionar marcas comerciales (Viajemos, Miles, MCR ni similares).\n"
-            "- PROHIBIDO repetir apertura ya usada.\n"
-            "- La descripción debe hablar de algo concreto y exclusivo de este tipo, no intercambiable con otro.\n"
-            "- Menciona el destino de forma natural dentro de la oración.\n"
-            f"- Aperturas ya usadas: {used_openings_text}.\n"
-            f"- Descripciones ya usadas: {used_descs_text}.\n"
-            "EJEMPLOS de aperturas variadas (no copies literalmente, úsalos de guía):\n"
-            "  'Para viajes cortos por la ciudad,...'\n"
-            "  'Cuando necesitas moverte sin complicaciones,...'\n"
-            "  'Si el plan incluye varias paradas,...'\n"
-            "  'Con capacidad para grupos y equipaje,...'\n"
-            "  'Ideal para quien prioriza comodidad,...'\n"
-            "  'Su diseño lo convierte en la opción perfecta...'\n"
-            "  'Perfecto para quienes buscan estilo y rendimiento,...'\n"
-            "  'Recorrer las rutas de [ciudad] con este auto...'\n"
-            "Salida obligatoria:\n"
-            "|desc: redacción|"
-        )
-        best_candidate = ""
-        for _ in range(5):
-            raw = self._call(prompt, temperature=TEMP_CREATIVE)
-            candidate = (parse_fields(raw).get("desc") or "").strip()
-            if not candidate:
-                candidate = re.sub(r"<think>.*?</think>", "", raw or "", flags=re.DOTALL).strip()
-                candidate = re.sub(r"^\|?\s*desc\s*:\s*", "", candidate, flags=re.IGNORECASE)
-                candidate = candidate.replace("|", " ").strip()
-                candidate = re.sub(r"\s+", " ", candidate)
-            if candidate and not best_candidate:
-                best_candidate = candidate
-            if not _is_valid(candidate):
-                continue
-            opening = self._fav_city_desc_opening(candidate)
-            if opening in used_openings:
-                continue
-            return candidate
-
-        relaxed_prompt = (
-            f"Destino: {location}\n"
-            f"Tipo de auto: {tipo}\n"
-            f"Escribe una sola oración en español neutro latinoamericano de {min_w} a {max_w} palabras.\n"
-            "REGLAS:\n"
-            f"- Entre {min_w} y {max_w} palabras.\n"
-            f"- NUNCA empieces con '{tipo}'.\n"
-            "- NO menciones marcas comerciales.\n"
-            "- No repitas aperturas ya usadas.\n"
-            f"- Aperturas usadas: {used_openings_text}.\n"
-            "- No uses formato pipe ni etiquetas. Devuelve solo la oración final."
-        )
-        for _ in range(2):
-            raw = self._call(relaxed_prompt, temperature=TEMP_CREATIVE)
-            candidate = re.sub(r"<think>.*?</think>", "", raw or "", flags=re.DOTALL).strip()
-            candidate = candidate.replace("|", " ").strip()
-            candidate = re.sub(r"\s+", " ", candidate)
-            if candidate and not best_candidate:
-                best_candidate = candidate
-            if not _is_valid(candidate):
-                continue
-            opening = self._fav_city_desc_opening(candidate)
-            if opening in used_openings:
-                continue
-            return candidate
-        return best_candidate
+        return self._parse_and_supervise(raw, tit_default=tit_sugerido)
 
     def generate_car_type(self, titulos_autos: List[str], nuevo_tema: str) -> str:
-        """B5 — Car Rental: títulos estándar + descripciones LLM individuales por tipo de auto."""
-        location = self._extract_location_from_title(nuevo_tema)
-        word_range = (15, 20)
+        """B5 — Car Rental descripciones individuales por tipo de auto (15-20 palabras c/u)."""
+        if not titulos_autos:
+            titulos_autos = [
+                "Auto Económico", "Auto Compacto", "Auto Intermedio",
+                "SUV", "Van", "Auto de Lujo",
+            ]
 
+        location = self._extract_location_from_title(nuevo_tema)
+        if self.brand in ("vjm", "viajemos"):
+            rango = "19 a 29 palabras"
+        else:
+            rango = "15 a 20 palabras"
+
+        titulos_texto = "\n".join(
+            [f"Tipo {i+1}: {t}" for i, t in enumerate(titulos_autos)]
+        )
+        pipe_example = "\n".join(
+            [f"|tit_{i+1}: {t}|\n|desc_{i+1}: descripción de {rango}|"
+             for i, t in enumerate(titulos_autos)]
+        )
+
+        exclamaciones = (
+            "- PROHIBIDO usar exclamaciones.\n"
+            if self.brand == "mcr" else ""
+        )
+
+        _opening_bank = [
+            "Para viajes cortos por la ciudad,",
+            "Cuando necesitas moverte sin complicaciones,",
+            "Si el plan incluye varias paradas,",
+            "Para recorridos donde el tiempo importa,",
+            "Cuando priorizas espacio y comodidad,",
+            "Si viajas en grupo o con equipaje extra,",
+            "Para quienes buscan conducir con estilo,",
+            "Cuando el destino exige versatilidad,",
+            "Si tu ruta mezcla ciudad y carretera,",
+            "Para aprovechar al máximo cada kilómetro,",
+        ]
+        openings_ejemplo = " / ".join(_opening_bank[:6])
+
+        prompt = (
+            f"Destino: {location}\n"
+            f"Genera una descripción ({rango}) para cada tipo de auto. "
+            "Cada descripción debe sonar completamente diferente a las demás.\n\n"
+            "REGLAS OBLIGATORIAS:\n"
+            f"- Entre {rango} exactas. La oración debe terminar con sentido completo.\n"
+            "- PROHIBIDO ESTRICTO: que dos descripciones empiecen con la misma palabra o frase. "
+            "Cada apertura debe ser estructuralmente diferente (condicional, imperativo, pregunta, afirmación, etc.).\n"
+            "- PROHIBIDO: repetir cierres o remates entre descripciones.\n"
+            "- Menciona el destino dentro de la descripción de forma natural.\n"
+            "- La descripción habla de algo concreto y exclusivo de ese tipo de auto, no intercambiable con otro.\n"
+            "- El nombre del tipo integrado en medio de la oración, NUNCA como primera palabra.\n"
+            "- PROHIBIDO frases que suenen a plantilla (ej: 'y aprovechar mejor cada tramo' repetido).\n"
+            "- PROHIBIDO mencionar marcas o comparadores.\n"
+            f"{exclamaciones}"
+            f"Ejemplos de aperturas variadas (úsalas como inspiración, no literalmente): {openings_ejemplo}\n\n"
+            f"{titulos_texto}\n\n"
+            "Genera:\n"
+            "<think>aquí tus pensamientos</think>\n"
+            f"{pipe_example}\n"
+            "IMPORTANTE: Solo usa | al inicio y final de cada campo, NUNCA dentro del contenido."
+        )
+        raw = self._call(prompt, temperature=TEMP_CREATIVE)
+        parsed = parse_fields(raw)
         out = {}
-        used_descs: List[str] = []
-        used_openings: List[str] = []
+
+        # Fallbacks con apertura y cierre únicos por posición (round-robin garantizado)
+        _fallback_openings = [
+            "Para viajes cortos por la ciudad,",
+            "Cuando necesitas moverte sin restricciones,",
+            "Si el plan incluye varias paradas,",
+            "Para recorridos donde el tiempo importa,",
+            "Cuando priorizas espacio y comodidad,",
+            "Si viajas en grupo o con equipaje extra,",
+            "Para quienes buscan conducir con estilo,",
+            "Cuando el destino exige versatilidad,",
+            "Si tu ruta combina ciudad y carretera,",
+            "Para aprovechar cada kilómetro al máximo,",
+        ]
+        _fallback_closings = [
+            "con un ritmo de viaje más eficiente.",
+            "y mayor control sobre tus tiempos.",
+            "sin sacrificar comodidad en el camino.",
+            "sacando el máximo partido a cada tramo.",
+            "con la flexibilidad que tu itinerario necesita.",
+            "y una experiencia de conducción equilibrada.",
+            "adaptándose a cualquier plan del viaje.",
+            "con más tranquilidad desde el primer día.",
+            "sin preocuparte por el espacio disponible.",
+            "y un nivel de confort acorde a tu ruta.",
+        ]
+
+        def _mid_for_tipo(tipo: str, city: str) -> str:
+            t = (tipo or "").lower()
+            if "econ" in t:
+                return f"un {tipo} recorre {city} con consumo eficiente"
+            if "compact" in t:
+                return f"un {tipo} circula por {city} y estaciona con facilidad"
+            if "intermedio" in t:
+                return f"un {tipo} ofrece equilibrio entre espacio y maniobrabilidad en {city}"
+            if "suv" in t:
+                return f"un {tipo} da altura y amplitud para trayectos variados en {city}"
+            if "van" in t:
+                return f"una {tipo} organiza mejor pasajeros y equipaje en rutas por {city}"
+            if "lujo" in t:
+                return f"un {tipo} eleva la experiencia de conducción en {city}"
+            if "eléctric" in t or "electric" in t:
+                return f"un {tipo} recorre {city} de forma silenciosa y sostenible"
+            return f"un {tipo} se adapta a distintos recorridos dentro de {city}"
+
+        used_openings: set = set()
+        used_closings: set = set()
+        fallback_open_idx = 0
+        fallback_close_idx = 0
+
+        def _pick_unique_opening() -> str:
+            nonlocal fallback_open_idx
+            while fallback_open_idx < len(_fallback_openings):
+                candidate = _fallback_openings[fallback_open_idx]
+                fallback_open_idx += 1
+                key = candidate.split()[0].lower()
+                if key not in used_openings:
+                    used_openings.add(key)
+                    return candidate
+            # Si se agotaron, devuelve el siguiente en ciclo
+            candidate = _fallback_openings[fallback_open_idx % len(_fallback_openings)]
+            fallback_open_idx += 1
+            return candidate
+
+        def _pick_unique_closing() -> str:
+            nonlocal fallback_close_idx
+            while fallback_close_idx < len(_fallback_closings):
+                candidate = _fallback_closings[fallback_close_idx]
+                fallback_close_idx += 1
+                key = " ".join(candidate.split()[:3]).lower()
+                if key not in used_closings:
+                    used_closings.add(key)
+                    return candidate
+            candidate = _fallback_closings[fallback_close_idx % len(_fallback_closings)]
+            fallback_close_idx += 1
+            return candidate
 
         for i, tipo in enumerate(titulos_autos, start=1):
-            desc_v = self._generate_single_car_type_desc(
-                tipo, location, nuevo_tema, word_range, used_descs, used_openings
-            )
-            out[f"tit_{i}"] = tipo
-            out[f"desc_{i}"] = desc_v
-            if desc_v:
-                sig = self._fav_city_desc_signature(desc_v)
-                op = self._fav_city_desc_opening(desc_v)
-                if sig:
-                    used_descs.append(sig)
-                if op:
-                    used_openings.append(op)
+            tit_k = f"tit_{i}"
+            desc_k = f"desc_{i}"
+            out[tit_k] = tipo
+            desc_v = (parsed.get(desc_k) or "").strip()
 
+            # Detectar apertura repetida en resultado del LLM
+            if desc_v:
+                first_word = desc_v.split()[0].lower() if desc_v.split() else ""
+                if first_word in used_openings:
+                    desc_v = ""  # forzar fallback para esta entrada
+                else:
+                    used_openings.add(first_word)
+
+            if not desc_v:
+                op = _pick_unique_opening()
+                cl = _pick_unique_closing()
+                mid = _mid_for_tipo(tipo, location)
+                desc_v = re.sub(r"\s+", " ", f"{op} {mid}, {cl}").strip()
+
+            out[desc_k] = desc_v
         return "\n".join(f"|{k}: {v}|" for k, v in out.items())
 
     def generate_fav_city(self, tit_seo: str, nuevo_tema: str) -> str:
-        """B6 — Favorite Cities/Locations header: título + descripción estandarizados."""
-        vehicle_kw = self._extract_vehicle_keyword(tit_seo)
+        """B6 — Favorite Cities/Locations header: título + descripción (55-65 palabras)."""
         brand_name = self.brand_name
-
-        vehicle_singular = self._VEHICLE_KW_MAP.get(vehicle_kw, ("autos", "auto"))[1] if vehicle_kw else "auto"
-        vehicle_plural = self._VEHICLE_KW_MAP.get(vehicle_kw, ("autos", "auto"))[0] if vehicle_kw else "autos"
-
-        import hashlib
-        _tit_variants = [
-            f"Renta un {vehicle_singular} en otras ciudades de Estados Unidos",
-            f"Alquiler de {vehicle_plural} en otras ciudades de Estados Unidos",
-            f"Explora otras ciudades de Estados Unidos con {vehicle_plural} en renta",
-        ]
-        idx = int(hashlib.md5(nuevo_tema.encode()).hexdigest(), 16) % len(_tit_variants)
-        tit = self._apply_vehicle_kw(_tit_variants[idx], vehicle_kw)
+        location = self._extract_location_from_title(nuevo_tema)
 
         if self.brand == "mcr":
-            desc = (
-                f"Renta un {vehicle_singular} en otras ciudades de Estados Unidos y adapta tu experiencia de conducción a distintos escenarios. "
-                "Desde rutas costeras hasta recorridos urbanos, encuentra opciones en destinos como Nueva York, Miami y Los Ángeles. "
-                f"Compara ubicaciones, elige según tu itinerario y reserva con {brand_name} para viajar con mayor libertad."
+            examples = (
+                "Ejemplos de referencia:\n"
+                f"Ejemplo 1: tit: Ciudades populares para rentar un auto en EE. UU., "
+                "desc: Recorre los principales destinos de Estados Unidos al volante de un auto rentado. "
+                "Compara tarifas en tu ciudad de destino y reserva con Miles Car Rental. "
+                "Cada ciudad tiene sus rutas y atracciones: elige la mejor opción para tu viaje.\n"
+                f"Ejemplo 2: tit: Las mejores ciudades para alquilar un auto cerca de Miami, "
+                "desc: Desde Miami puedes llegar a docenas de destinos en pocas horas. "
+                "Renta un auto con Miles Car Rental y explora ciudades cercanas, playas y parques "
+                "nacionales con total libertad y al mejor precio del mercado.\n\n"
             )
         else:
-            desc = (
-                f"Renta un {vehicle_singular} en otras ciudades de Estados Unidos y adapta tu experiencia de conducción a distintos escenarios. "
-                "Desde rutas costeras hasta recorridos urbanos, encuentra opciones en destinos como Nueva York, Miami y Los Ángeles. "
-                "Compara ubicaciones, elige según tu itinerario y viaja con Viajemos para aprovechar cada trayecto."
+            examples = (
+                "Ejemplos de referencia:\n"
+                "Ejemplo 1: tit: Destinos populares para rentar un auto, "
+                "desc: Recorre los destinos más visitados de Estados Unidos al volante. "
+                "Con Viajemos compara tarifas entre las mejores agencias y reserva tu auto ideal "
+                "para explorar cada ciudad con libertad total.\n"
+                "Ejemplo 2: tit: Renta un auto y descubre nuevas ciudades, "
+                "desc: Cada destino tiene su encanto y sus rutas imperdibles. "
+                "Con Viajemos encuentras la mejor tarifa de alquiler para moverte con comodidad, "
+                "sin depender de horarios ni transporte público.\n\n"
             )
 
-        return f"|tit: {tit}|\n|desc: {desc}|"
+        _tit_variants = [
+            f"Ciudades populares para rentar un auto cerca de {location}",
+            f"Destinos imperdibles para alquilar un auto desde {location}",
+            f"Las mejores ciudades para renta de autos en la zona de {location}",
+        ]
+        import hashlib
+        idx = int(hashlib.md5(nuevo_tema.encode()).hexdigest(), 16) % len(_tit_variants)
+        tit_default = _tit_variants[idx]
+        desc_default = (
+            f"Explora los destinos más populares con un auto rentado a través de {brand_name}. "
+            "Compara tarifas entre agencias reconocidas y elige la opción ideal "
+            "para viajar con libertad, comodidad y al mejor precio."
+        )
+
+        prompt = (
+            f"{examples}"
+            f"Nuevo tema: {nuevo_tema}, contexto LP: {tit_seo}\n"
+            "REGLAS:\n"
+            "- tit: H2 específico para esta LP. OBLIGATORIO mencionar el destino o zona. "
+            "NO usar 'Destinos populares' genérico. Varía: 'Ciudades para rentar un auto cerca de X' / "
+            "'Destinos imperdibles para alquilar un auto desde X' / 'Mejores ciudades para renta de autos en X'.\n"
+            f"- desc: {'75 a 80' if self.brand == 'mcr' else '55 a 60'} palabras. Enfatiza libertad de movimiento y variedad de destinos.{' Máximo 1 mención de la marca.' if self.brand == 'mcr' else ' Menciona la marca.'}\n"
+            "Genera:\n"
+            "<think>aquí tus pensamientos</think>\n"
+            "|tit: título específico para esta LP|\n"
+            "|desc: redacción|"
+        )
+        raw = self._call(prompt, temperature=TEMP_CREATIVE)
+        fields = parse_fields(raw)
+
+        # Normaliza aliases frecuentes para garantizar salida H2 + descripción.
+        tit = (
+            (fields.get("tit") or "").strip()
+            or (fields.get("h2") or "").strip()
+            or (fields.get("titulo") or "").strip()
+            or tit_default
+        )
+        desc = (
+            (fields.get("desc") or "").strip()
+            or (fields.get("h2_desc") or "").strip()
+            or (fields.get("descripcion") or "").strip()
+            or desc_default
+        )
+
+        safe = f"|tit: {tit}|\n|desc: {desc}|"
+        return self._parse_and_supervise(safe, tit_default=tit_default)
 
     def generate_fav_city_respuesta(self, nuevo_tema: str, ciudades: List[str]) -> str:
         """B6 — Favorite Cities descripciones individuales por ciudad (25-30 palabras c/u)."""
@@ -1468,49 +1319,112 @@ class ContentGenerator:
         # No autocompletar con ciudades por defecto cuando el usuario ya provee lista.
         # Si la lista llega corta, se respeta tal cual para evitar "inventar" localidades.
 
-        _city_highlights = {
-            "miami": "playas y arte urbano",
-            "orlando": "parques y compras",
-            "las vegas": "el Strip y el desierto",
-            "nueva york": "barrios y recorridos urbanos",
-            "los angeles": "playas y carreteras panorámicas",
-            "houston": "museos y zonas comerciales",
-            "chicago": "arquitectura y parques",
-            "fort lauderdale": "canales y playa",
-            "san diego": "costa y miradores",
-            "dallas": "negocios y entretenimiento",
-            "phoenix": "rutas desérticas y escapadas",
-            "tampa": "bahía y playas cercanas",
-            "san francisco": "miradores y puentes",
-            "atlanta": "historia y vida urbana",
-            "denver": "montañas y rutas panorámicas",
-            "austin": "música y gastronomía",
-            "cbx": "cruces ágiles y carretera",
-        }
+        ciudades_texto = "\n".join([f"Ciudad {i+1}: {c}" for i, c in enumerate(normalized)])
+        _tit_examples = [
+            "{city}",
+            "{city}",
+            "{city}",
+            "{city}",
+            "{city}",
+        ]
+        expected_pipe = "\n".join([
+            f"|tit_{i+1}: {_tit_examples[i % len(_tit_examples)].format(city=c)}|\n|desc_{i+1}: texto de 25 a 30 palabras sobre rentar en {c}|"
+            for i, c in enumerate(normalized)
+        ])
+        _openings = [
+            "Si piensas moverte sin depender de horarios,",
+            "Para aprovechar mejor cada tramo del viaje,",
+            "Cuando el plan incluye varias paradas,",
+            "Si quieres recorrer mas en menos tiempo,",
+            "Para combinar ciudad y alrededores,",
+            "Si buscas un viaje mas flexible,",
+            "Con un itinerario activo durante el dia,",
+            "Para un recorrido comodo de principio a fin,",
+        ]
+        openings_ref = " / ".join(_openings)
+        n_cities = len(normalized)
+        prompt = (
+            f"Tema: {nuevo_tema}\n"
+            f"Genera TITULO y DESCRIPCION para las {n_cities} ciudades en formato pipe exacto. DEBES generar los {n_cities} bloques completos.\n"
+            "Regla de TITULO (obligatoria): cada tit_i debe ser SOLO el nombre de la ciudad/localidad, sin prefijos comerciales.\n"
+            "Cada desc: EXACTAMENTE 25 a 30 palabras. Tono comercial. Ciudad mencionada una sola vez.\n\n"
+            "VARIEDAD DE ESTRUCTURA (obligatoria):\n"
+            "- PROHIBIDO que 2 o más descripciones empiecen con la misma palabra.\n"
+            "- PROHIBIDO iniciar con 'Alquila un auto en', 'Renta un auto en', "
+            "'Alquiler de autos en', 'Descubre' o 'Descubrir'.\n"
+            "- Alterna aperturas estructuralmente diferentes. "
+            f"Referencia (adapta al destino): {openings_ref}\n\n"
+            "VARIACIÓN DE KEYWORDS (obligatoria en el conjunto):\n"
+            "- Servicio: alterna 'alquiler de autos', 'renta de carros', 'rentar un auto', "
+            "'reservar un carro', 'renta de autos'. Máximo 2 descripciones seguidas con el mismo término.\n"
+            "- Vehículo: usa 'auto/autos' la mayoría; 'carro/carros' como variante frecuente; "
+            "'vehículo' máximo 1 vez en todo el conjunto.\n"
+            "- Títulos: NO usar frases como 'Alquiler de autos en...'; solo ciudad/localidad.\n\n"
+            f"{ciudades_texto}\n\n"
+            "Salida OBLIGATORIA (sin texto extra):\n"
+            f"{expected_pipe}"
+        )
+
+        parsed = {}
+        try:
+            raw = self._call(prompt, temperature=TEMP_CREATIVE)
+            parsed = parse_fields(raw) or {}
+        except Exception as e:
+            log.warning("Favorite Cities: fallo llamada LLM, usando fallback. Error: %s", e)
+
+        # Completar siempre tit_i y desc_i con fallback deterministico
+        defaults_map = {name.lower(): (title, desc) for name, title, desc in _FAV_CITY_DEFAULTS}
+
+        # Variantes de keyword para fallback — rotación por índice garantiza variedad
+        _fallback_tit_templates = [
+            "{city}",
+            "{city}",
+            "{city}",
+            "{city}",
+            "{city}",
+            "{city}",
+            "{city}",
+            "{city}",
+        ]
+        _fallback_desc_templates = [
+            "Compara opciones y reserva tu alquiler de autos en {city}. Disfruta libertad de movimiento, mejores tarifas y una experiencia de viaje mas flexible y comoda.",
+            "Encuentra la mejor tarifa para renta de carros en {city}. Viaja a tu ritmo, sin depender de horarios y con acceso a multiples destinos.",
+            "Rentar un auto en {city} te da la flexibilidad para explorar cada rincon sin restricciones. Elige el vehiculo ideal y reserva en minutos.",
+            "Reservar un carro en {city} es facil y rapido. Compara precios entre agencias reconocidas y disfruta tu viaje con total comodidad.",
+            "Con renta de autos en {city} puedes recorrer atracciones locales, playas y rutas panoramicas sin depender de transporte publico.",
+            "El alquiler de carros en {city} te permite organizar tu itinerario con autonomia total. Tarifas competitivas y amplia disponibilidad.",
+            "Rentar un carro en {city} es la opcion mas flexible para viajeros activos. Reserva con anticipacion y obtiene las mejores tarifas.",
+            "Reservar un auto en {city} te asegura movilidad total desde el primer dia. Compara agencias y elige la opcion que mejor se ajusta a tu viaje.",
+        ]
 
         out = {}
-        used_descs: List[str] = []
-        used_openings: List[str] = []
-
         for i, city in enumerate(normalized, start=1):
-            highlight = _city_highlights.get(city.lower(), "sus zonas más visitadas y rutas recomendadas")
-            desc_v = self._generate_single_fav_city_desc(nuevo_tema, city, highlight, used_descs, used_openings)
-            out[f"desc_{i}"] = desc_v
-            if desc_v:
-                sig = self._fav_city_desc_signature(desc_v)
-                op = self._fav_city_desc_opening(desc_v)
-                if sig:
-                    used_descs.append(sig)
-                if op:
-                    used_openings.append(op)
+            tit_k = f"tit_{i}"
+            desc_k = f"desc_{i}"
+
+            idx = (i - 1) % len(_fallback_tit_templates)
+            fallback_tit = _fallback_tit_templates[idx].format(city=city)
+            fallback_desc = _fallback_desc_templates[idx].format(city=city)
+
+            default_title, default_desc = defaults_map.get(city.lower(), (fallback_tit, fallback_desc))
+
+            tit_v = (parsed.get(tit_k) or "").strip()
+            desc_v = (parsed.get(desc_k) or "").strip()
+
+            if not tit_v:
+                tit_v = default_title
+            if not desc_v or len(desc_v.split()) < 12:
+                desc_v = default_desc
+
+            out[tit_k] = tit_v
+            out[desc_k] = desc_v
 
         return "\n".join(f"|{k}: {v}|" for k, v in out.items())
 
     def generate_rentacar(self, tit_seo: str, nuevo_tema: str) -> str:
         """Rentacar — mini-blogs: H2 intro + 2 H3 (actividades y agencias/autos)."""
-        vehicle_kw = self._extract_vehicle_keyword(tit_seo)
         location = self._extract_location_from_title(nuevo_tema)
-        tit_default = self._apply_vehicle_kw(f"Qué hacer en {location} con un auto rentado", vehicle_kw)
+        tit_default = f"Qué hacer en {location} con un auto rentado"
 
         # ── Llamada 1: tit + desc (H2 intro, 70-90 palabras) ──
         p1 = (
@@ -1524,7 +1438,6 @@ class ContentGenerator:
             "- desc: 70 a 90 palabras. Introducción sobre lo que permite explorar un auto rentado "
             "en el destino. Menciona brevemente tipos de autos y agencias disponibles.\n"
             "- Tono profesional. PROHIBIDO usar exclamaciones.\n"
-            "- Usa 'alquiler de autos' o 'renta de autos/carros' de forma orgánica en el tit o desc.\n"
             "Genera:\n"
             "<think>aquí tus pensamientos</think>\n"
             "|tit: H2 mini-blog|\n"
@@ -1535,8 +1448,6 @@ class ContentGenerator:
         fields = parse_fields(raw1)
         if not fields.get("tit"):
             fields["tit"] = tit_default
-        else:
-            fields["tit"] = self._apply_vehicle_kw(fields["tit"], vehicle_kw)
         if not fields.get("desc"):
             clean = re.sub(r"<think>.*?</think>", "", raw1, flags=re.DOTALL)
             clean = re.sub(r"\|[^|]+:", "", clean).replace("|", "").strip()
@@ -1552,7 +1463,6 @@ class ContentGenerator:
             "más adecuados para estas actividades (ej: SUV para excursiones, autos compactos "
             "para el centro, vans para grupos). Tono informativo y turístico. "
             "PROHIBIDO usar exclamaciones.\n"
-            "Usa 'alquiler de autos' o 'renta de autos/carros' de forma orgánica al menos una vez.\n"
             "Para listas usa ** arriba y abajo, - por ítem.\n"
             "Genera:\n"
             "<think>aquí tus pensamientos</think>\n"
@@ -1582,7 +1492,6 @@ class ContentGenerator:
             "Alamo, Dollar o Thrifty. Explica las categorías de autos disponibles y cómo elegir "
             "según el tipo de viaje (familia, negocios, aventura, etc.). "
             "Tono informativo con enfoque práctico. PROHIBIDO usar exclamaciones.\n"
-            "Usa 'alquiler de autos' o 'renta de autos/carros' de forma orgánica al menos una vez.\n"
             "Para listas usa ** arriba y abajo, - por ítem.\n"
             "Genera:\n"
             "<think>aquí tus pensamientos</think>\n"
@@ -1592,10 +1501,10 @@ class ContentGenerator:
         )
         raw3 = self._call(p3, temperature=TEMP_CREATIVE)
         fields3 = parse_fields(raw3)
-        tit_2 = self._apply_vehicle_kw(fields3.get("tit_2", "").strip(), vehicle_kw)
+        tit_2 = fields3.get("tit_2", "").strip()
         desc_2 = fields3.get("desc_2", "").strip()
         if not tit_2:
-            tit_2 = self._apply_vehicle_kw(f"Agencias de renta de autos en {location}", vehicle_kw)
+            tit_2 = f"Agencias de renta de autos en {location}"
         if not desc_2:
             clean = re.sub(r"<think>.*?</think>", "", raw3, flags=re.DOTALL)
             clean = re.sub(r"\|[^|]+:", "", clean).replace("|", "").strip()
@@ -1607,9 +1516,6 @@ class ContentGenerator:
 
     def generate_advicestipocarrusel(self, titulo_limpio: str, nuevo_tema: str) -> str:
         """Consejos — H2 propio + desc introductoria."""
-        vehicle_kw = self._extract_vehicle_keyword(titulo_limpio)
-        vehicle_plural = self._VEHICLE_KW_MAP.get(vehicle_kw, (vehicle_kw + "s", vehicle_kw))[0] if vehicle_kw else ""
-        kw_rule = f"- En el campo tit usa '{vehicle_plural}' en lugar de 'autos'/'carros'.\n" if vehicle_kw else ""
         prompt = (
             f"Nuevo tema: {nuevo_tema}, contexto LP: {titulo_limpio}\n"
             "Genera una introducción corta para una sección de consejos de viaje.\n"
@@ -1617,16 +1523,15 @@ class ContentGenerator:
             "- tit: H2 específico para sección de consejos. "
             "Ejemplos: 'Consejos para rentar un auto en Miami' / "
             "'Tips para alquilar un carro en Colombia'.\n"
-            f"{kw_rule}"
-            "- desc: 60 a 65 palabras. Usa 'alquiler de autos' o 'renta de autos/carros' de forma orgánica.\n"
+            "- desc: 60 a 65 palabras.\n"
             "Genera:\n"
             "<think>aquí tus pensamientos</think>\n"
             "|tit: H2 para sección de consejos|\n"
             "|desc: redacción|"
         )
         raw = self._call(prompt, temperature=TEMP_BALANCED)
-        tit_default = self._apply_vehicle_kw(f"Consejos para rentar un auto — {nuevo_tema}", vehicle_kw)
-        return self._fix_tit_vehicle_kw(self._parse_and_supervise(raw, tit_default=tit_default), vehicle_kw)
+        tit_default = f"Consejos para rentar un auto — {nuevo_tema}"
+        return self._parse_and_supervise(raw, tit_default=tit_default)
 
     def generate_faq_questions_from_title(self, titulo: str) -> List[str]:
         """
@@ -1727,8 +1632,7 @@ class ContentGenerator:
         )
         prompt = (
             f"Tema: {nuevo_tema}\n"
-            f"Genera una descripción (30 a 80 palabras) para cada consejo de viaje.\n"
-            "Al menos una descripción del conjunto debe usar 'alquiler de autos' o 'renta de autos/carros' de forma orgánica.\n\n"
+            f"Genera una descripción (30 a 80 palabras) para cada consejo de viaje.\n\n"
             f"{consejos_texto}\n\n"
             "Formato: |desc_1: texto| |desc_2: texto| etc."
         )
@@ -1737,14 +1641,13 @@ class ContentGenerator:
 
     def generate_bloquehistoria(self, tit_seo: str, nuevo_tema: str) -> str:
         """Bloque historia (MCR agencia) — H2 + descripción breve."""
-        vehicle_kw = self._extract_vehicle_keyword(tit_seo)
         location = self._extract_location_from_title(nuevo_tema)
         import hashlib as _hbh
         _bloquehistoria_tit_variants = [
-            self._apply_vehicle_kw(f"Renta un auto y descubre {location} a tu ritmo", vehicle_kw),
-            self._apply_vehicle_kw(f"Alquila un auto en {location} y vive la experiencia", vehicle_kw),
-            self._apply_vehicle_kw(f"Tu viaje en {location} comienza con la renta correcta", vehicle_kw),
-            self._apply_vehicle_kw(f"Alquiler de autos en {location}: tu punto de partida", vehicle_kw),
+            f"Renta un auto y descubre {location} a tu ritmo",
+            f"Alquila un auto en {location} y vive la experiencia",
+            f"Tu viaje en {location} comienza con la renta correcta",
+            f"Alquiler de autos en {location}: tu punto de partida",
         ]
         _bh_idx = int(_hbh.md5(nuevo_tema.encode()).hexdigest(), 16) % len(_bloquehistoria_tit_variants)
         tit_default = _bloquehistoria_tit_variants[_bh_idx]
@@ -1763,8 +1666,6 @@ class ContentGenerator:
                 "desde el primer día."
             )
 
-        vehicle_plural = self._VEHICLE_KW_MAP.get(vehicle_kw, (vehicle_kw + "s", vehicle_kw))[0] if vehicle_kw else ""
-        kw_rule = f"- En el campo tit usa '{vehicle_plural}' en lugar de 'autos'/'carros'.\n" if vehicle_kw else ""
         prompt = (
             f"Tema: {nuevo_tema}, contexto LP: {tit_seo}\n"
             "Genera contenido para un bloque narrativo corto de landing page.\n"
@@ -1773,7 +1674,6 @@ class ContentGenerator:
             "Ejemplos válidos: 'Renta un auto y descubre [destino] a tu ritmo' / "
             "'Alquila un auto en [destino] y vive la experiencia' / "
             "'Tu viaje en [destino] comienza con el alquiler correcto'.\n"
-            f"{kw_rule}"
             f"- desc: 55 a 60 palabras, tono {tone}.\n"
             "- No uses listas ni markdown.\n"
             "Salida obligatoria:\n"
@@ -1781,7 +1681,7 @@ class ContentGenerator:
             "|desc: ...|"
         )
         raw = self._call(prompt, temperature=TEMP_BALANCED)
-        result = self._fix_tit_vehicle_kw(self._parse_and_supervise(raw, tit_default=tit_default), vehicle_kw)
+        result = self._parse_and_supervise(raw, tit_default=tit_default)
         fields = parse_fields(result)
         if not fields.get("desc"):
             fields["desc"] = desc_default
