@@ -550,9 +550,12 @@ def generate_secciones_excel(export_request: models.ExportExcelRequest) -> Bytes
     logging.info(f"Secciones generado: {excel_row - 1} filas de contenido")
 
     city_slug = _extract_city_slug(export_request.lp_url_slug)
+    proyecto = (export_request.template_info.proyecto or "").lower()
+    is_viajemos = "viajemos" in proyecto or "vjm" in proyecto
+
     _add_imagenes_sheet(wb, city_slug)
     _add_precios_agencias_sheet(wb, city_slug)
-    _add_imagenes_secciones_sheet(wb, city_slug)
+    _add_imagenes_secciones_sheet(wb, city_slug, is_viajemos=is_viajemos)
     _add_categoria_flota_sheet(wb)
     _add_companies_sheet(wb)
     _add_agencias_sheet(wb)
@@ -878,7 +881,7 @@ def _add_precios_agencias_sheet(wb, city_slug: str = "ottawa") -> None:
         ws.write(r_idx, 7, href_pt,         text_fmt)
 
 
-def _add_imagenes_secciones_sheet(wb, city_slug: str = "ottawa") -> None:
+def _add_imagenes_secciones_sheet(wb, city_slug: str = "ottawa", is_viajemos: bool = True) -> None:
     """Add ImagenesSecciones sheet with section-level hero images."""
     ws = wb.add_worksheet("ImagenesSecciones")
 
@@ -929,12 +932,28 @@ def _add_imagenes_secciones_sheet(wb, city_slug: str = "ottawa") -> None:
 
     city_name = city_slug.capitalize()
 
-    rows = [
-        ("quicksearch", "ottawa-vjm.webp",
-         "Car rentals in Ottawa",       "Rent a car in Ottawa",
-         "Renta de carros en Ottawa",   "Alquila un auto en Ottawa",
-         "Aluguel de carros em Ottawa", "Locação de veículos em Ottawa"),
-    ]
+    if is_viajemos:
+        rows = [
+            ("quicksearch", "ottawa-vjm.webp",
+             "Car rentals in Ottawa",       "Rent a car in Ottawa",
+             "Renta de carros en Ottawa",   "Alquila un auto en Ottawa",
+             "Aluguel de carros em Ottawa", "Locação de veículos em Ottawa"),
+        ]
+    else:
+        # Miles Car Rental: usa prefijo ContentLp/, sufijo -mcr y fila extra TrustPilot
+        rows = [
+            ("quicksearch", "ContentLp/ottawa-mcr.webp",
+             "Car rentals in Ottawa",       "Car rentals in Ottawa",
+             "Renta de carros en Ottawa",   "Alquiler de autos en Ottawa",
+             "Aluguel de carros em Ottawa", "Locação de veículos em Ottawa"),
+            ("TrustPilot", "ContentLp/ottawa-mcr-opiniones.webp",
+             "Reviews about car rentals in Ottawa",
+             "Customer reviews about car rentals in Ottawa",
+             "Comentarios de clientes acerca del alquiler de automóviles en Ottawa",
+             "Reseñas de usuarios sobre renta de carros en Ottawa",
+             "Opiniões de clientes sobre aluguel de carros em Ottawa",
+             "Comentários de clientes sobre locação de veículos em Ottawa"),
+        ]
 
     def _rc(val):
         if isinstance(val, str):

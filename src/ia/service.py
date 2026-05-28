@@ -838,9 +838,17 @@ class IAService:
                 translation_prompt,
                 system_message
             )
-            
+
+            if not translated_content or not translated_content.strip():
+                llm_health = generator.llm.health()
+                raise RuntimeError(
+                    f"LLM no disponible para traducción a {request.targetLanguage}. "
+                    f"URL configurada: {llm_health.get('configured_urls')}. "
+                    f"Último error: {llm_health.get('last_error', 'desconocido')}"
+                )
+
             logging.info(f"Translated content to {request.targetLanguage} for LP {landing_page_id}")
-            
+
             return models.TranslationResponse(
                 translatedContent=translated_content.strip(),
                 sourceLanguage="es",
