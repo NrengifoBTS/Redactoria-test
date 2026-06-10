@@ -110,7 +110,7 @@ def get_user_profile(
     return profile
 
 
-def _is_spanish_title_edit(edit) -> bool:
+def _is_spanish_title_edit(edit, admin_ids: set) -> bool:
     """
     Detecta si una edición es a un título de Español (h2/h3).
 
@@ -129,9 +129,8 @@ def _is_spanish_title_edit(edit) -> bool:
         if col != '3':
             return False
 
-        # Solo si es realizada por admin
-        from src.core.config import settings
-        if not edit.performed_by_user_id or not settings.is_admin_user(edit.performed_by_user_id):
+        # Solo si es realizada por admin (rol desde BD)
+        if not edit.performed_by_user_id or str(edit.performed_by_user_id) not in admin_ids:
             return False
 
         # Detectar filas de títulos según block_type
@@ -191,6 +190,10 @@ def get_metrics(
     from src.entities.logging.user_edit import UserEdit
     from src.entities.landing_page import LandingPage
     from src.entities.template import Template
+    from src.auth.permissions import get_admin_user_ids
+
+    # Admins según el rol en la BD (fuente de verdad), no listas hardcodeadas
+    admin_ids = get_admin_user_ids(db)
 
     # Lower bound: date_from takes priority over days
     cutoff: Optional[datetime] = None
@@ -236,16 +239,11 @@ def get_metrics(
     if user_id:
         gen_query = gen_query.filter(AIGeneration.user_id == user_id)
 
-    # Exclude admin generations if requested
-    if exclude_admins:
-        from src.core.config import settings
-        gen_query = gen_query.filter(~AIGeneration.user_id.in_(settings.ADMIN_USER_IDS))
+    # Exclude admin generations if requested (admins por rol BD)
+    if exclude_admins and admin_ids:
+        gen_query = gen_query.filter(~AIGeneration.user_id.in_(list(admin_ids)))
 
     generations = gen_query.all()
-
-    # ALWAYS exclude users from EXCLUDED_FROM_ANALYTICS_USER_IDS (regardless of exclude_admins)
-    from src.core.config import settings
-    generations = [g for g in generations if str(g.user_id) not in settings.EXCLUDED_FROM_ANALYTICS_USER_IDS]
 
     # Query edits
     edit_query = db.query(UserEdit)
@@ -264,12 +262,8 @@ def get_metrics(
 
     edits = edit_query.all()
 
-    # ALWAYS exclude users from EXCLUDED_FROM_ANALYTICS_USER_IDS (regardless of exclude_admins)
-    edits = [e for e in edits if str(e.user_id) not in settings.EXCLUDED_FROM_ANALYTICS_USER_IDS]
-
     # Filter admin edits if requested
     if exclude_admins:
-        from src.core.config import settings
         filtered_edits = []
 
         # First pass: Log Spanish title edits for identification
@@ -278,7 +272,7 @@ def get_metrics(
             try:
                 if edit.cell_position and edit.performed_by_user_id:
                     row, col = edit.cell_position.split('-')
-                    if col == '3' and settings.is_admin_user(edit.performed_by_user_id):
+                    if col == '3' and str(edit.performed_by_user_id) in admin_ids:
                         logging.info(
                             f"[Spanish Title Detection] "
                             f"Cell: {edit.cell_position}, "
@@ -298,12 +292,12 @@ def get_metrics(
                 continue
 
             # Exclude Spanish title edits by admins
-            if _is_spanish_title_edit(edit):
+            if _is_spanish_title_edit(edit, admin_ids):
                 logging.info(f"[Filter] Excluding Spanish title edit at cell {edit.cell_position}")
                 continue
 
             # Exclude edits by admins to their own content
-            if str(edit.user_id) in settings.ADMIN_USER_IDS:
+            if str(edit.user_id) in admin_ids:
                 continue
 
             # This is an edit by a regular editor
@@ -315,7 +309,7 @@ def get_metrics(
         logging.info(f"[Metrics Filter] exclude_admins=True")
         logging.info(f"[Metrics Filter] Total generations after filter: {len(generations)}")
         logging.info(f"[Metrics Filter] Total edits after filter: {len(edits)}")
-        logging.info(f"[Metrics Filter] Admin IDs: {settings.ADMIN_USER_IDS}")
+        logging.info(f"[Metrics Filter] Admin IDs (rol BD): {len(admin_ids)} usuarios")
 
     # Calculate metrics
     total_generations = len(generations)
@@ -401,8 +395,6 @@ def get_metrics(
 
     # Combine user stats and get user emails
     all_user_ids = set(user_gen_stats.keys()) | set(user_edit_stats.keys())
-    # Exclude users from analytics
-    all_user_ids = {uid for uid in all_user_ids if str(uid) not in settings.EXCLUDED_FROM_ANALYTICS_USER_IDS}
     user_activity = []
 
     for user_id in all_user_ids:
@@ -510,15 +502,22 @@ def get_ria_v2_metrics(
     days: Optional[int] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
+    exclude_admins: bool = False,
 ):
     """
     Get real acceptance metrics from ria_v2_save_log and ria_v2_generation_log.
     Returns pct_ai_kept distributions, per-user and per-block breakdowns.
+
+    exclude_admins (default False): si es True, excluye de las métricas el trabajo
+    hecho por administradores, dejando solo el de los redactores. Los admins se
+    determinan por el ROL en la BD (users.role = admin/master), que es la única
+    fuente de verdad; no se usan listas hardcodeadas.
     """
     from ..entities.ria_v2 import RiaV2GenerationLog, RiaV2SaveLog
     from src.entities.landing_page import LandingPage
     from src.entities.template import Template
     from src.entities.user import User
+    from src.auth.permissions import get_admin_user_ids
 
     # Date bounds
     cutoff_lower = None
@@ -576,6 +575,16 @@ def get_ria_v2_metrics(
 
     saves = _apply_filters(db.query(RiaV2SaveLog), RiaV2SaveLog).all()
     gens = _apply_filters(db.query(RiaV2GenerationLog), RiaV2GenerationLog).all()
+
+    # ── Excluir administradores (según el rol en BD, fuente de verdad) ──
+    # Las métricas reflejan el trabajo de los redactores; cuando exclude_admins
+    # es True se omiten los usuarios con rol admin/master (columna users.role),
+    # NO una lista hardcodeada de IDs.
+    if exclude_admins:
+        admin_ids = get_admin_user_ids(db)
+        if admin_ids:
+            saves = [s for s in saves if str(s.user_id) not in admin_ids]
+            gens = [g for g in gens if str(g.user_id) not in admin_ids]
 
     # ── Overall stats ──
     total_sections_generated = len(

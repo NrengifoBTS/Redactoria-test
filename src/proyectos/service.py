@@ -1,16 +1,24 @@
 from datetime import datetime, timezone
 from uuid import UUID
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from typing import Optional, List
-from fastapi import BackgroundTasks
+from fastapi import BackgroundTasks, HTTPException, status
 from . import models
 from src.auth.models import TokenData
+from src.auth.permissions import is_admin_user
 from src.entities.proyecto import Proyecto
 from src.entities.landing_page import LandingPage
 from src.exceptions import ProyectoCreationError, ProyectoNotFoundError
 import logging
 
 def create_proyecto(current_user: TokenData, db: Session, proyecto: models.ProyectoCreate) -> Proyecto:
+    # Solo administradores (admin/master) pueden crear landing pages.
+    if not is_admin_user(db, current_user.get_uuid()):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No autorizado. Solo administradores pueden crear landing pages.",
+        )
     try:
         now = datetime.now(timezone.utc)
         new_proyecto = Proyecto(
@@ -18,6 +26,10 @@ def create_proyecto(current_user: TokenData, db: Session, proyecto: models.Proye
             description=proyecto.description,
             estado=proyecto.estado.value,
             prioridad=proyecto.prioridad.value,
+            dominio=proyecto.dominio,
+            dominio_url=proyecto.dominio_url,
+            dominio_pais=proyecto.dominio_pais,
+            dominio_idiomas=proyecto.dominio_idiomas,
             created_by=current_user.get_uuid(),
             assigned_to=proyecto.assigned_to,
             template_id=proyecto.template_id,
@@ -32,7 +44,7 @@ def create_proyecto(current_user: TokenData, db: Session, proyecto: models.Proye
         new_landing_page = LandingPage(
             proyecto_id=new_proyecto.id,
             url_slug=f"proyecto-{str(new_proyecto.id)[:8]}",  # Primeros 8 chars del UUID
-            title=f"Landing Page - {new_proyecto.name}",
+            title=new_proyecto.name,  # Título simple (sin prefijo "Landing Page - ")
             meta_description=f"Landing page para el proyecto {new_proyecto.name}",
             is_published=False,
             template_id=new_proyecto.template_id,
@@ -60,16 +72,24 @@ def get_proyectos(current_user: TokenData, db: Session,
                  assigned_to: Optional[UUID] = None) -> List[Proyecto]:
     
     query = db.query(Proyecto)
-    
+
     # Filtrar por permisos: admin ve todos, otros solo los suyos (creados o asignados)
     user_uuid = current_user.get_uuid()
+    if not is_admin_user(db, user_uuid):
+        query = query.filter(
+            or_(
+                Proyecto.created_by == user_uuid,
+                Proyecto.assigned_to == user_uuid,
+            )
+        )
+
     if estado:
         query = query.filter(Proyecto.estado == estado.value)
     if prioridad:
         query = query.filter(Proyecto.prioridad == prioridad.value)
     if assigned_to:
         query = query.filter(Proyecto.assigned_to == assigned_to)
-    
+
     proyectos = query.order_by(Proyecto.last_modified.desc()).all()
     logging.info(f"Retrieved {len(proyectos)} proyectos for user: {current_user.get_uuid()}")
     return proyectos
@@ -80,12 +100,19 @@ def get_proyecto_by_id(current_user: TokenData, db: Session, proyecto_id: UUID) 
         logging.warning(f"Proyecto {proyecto_id} not found for user {current_user.get_uuid()}")
         raise ProyectoNotFoundError(proyecto_id)
     
-    # Verificar permisos: solo creador, asignado o admin pueden ver
+    # Verificar permisos: solo creador, asignado o admin pueden acceder.
     user_uuid = current_user.get_uuid()
-    if proyecto.created_by != user_uuid and proyecto.assigned_to != user_uuid:
-        # Aquí verificarías si es admin, por ahora permito acceso
-        pass
-    
+    if (
+        proyecto.created_by != user_uuid
+        and proyecto.assigned_to != user_uuid
+        and not is_admin_user(db, user_uuid)
+    ):
+        logging.warning(f"Acceso no autorizado a proyecto {proyecto_id} por usuario {user_uuid}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes acceso a este proyecto.",
+        )
+
     logging.info(f"Retrieved proyecto {proyecto_id} for user {current_user.get_uuid()}")
     return proyecto
 
@@ -104,6 +131,16 @@ def update_proyecto(
 
     # Actualizar campos si se proporcionan
     update_data = proyecto_update.model_dump(exclude_unset=True)
+
+    # Solo los administradores pueden cambiar el nombre de la landing page.
+    new_name = update_data.get("name")
+    if new_name is not None and new_name != proyecto.name:
+        if not is_admin_user(db, current_user.get_uuid()):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Solo los administradores pueden editar el nombre de la landing page.",
+            )
+
     for field, value in update_data.items():
         if field in ['estado', 'prioridad'] and hasattr(value, 'value'):
             if field == 'estado' and value.value != old_status:
@@ -133,13 +170,17 @@ def update_proyecto(
     return proyecto
 
 def delete_proyecto(current_user: TokenData, db: Session, proyecto_id: UUID) -> None:
+    # get_proyecto_by_id ya valida acceso (admin/creador/asignado) o 404.
     proyecto = get_proyecto_by_id(current_user, db, proyecto_id)
-    
-    # Verificar permisos
-    if proyecto.created_by != current_user.get_uuid():
-        # Aquí verificarías si es admin
-        pass
-    
+
+    # Eliminar: solo el creador o un administrador (el asignado no elimina).
+    user_uuid = current_user.get_uuid()
+    if proyecto.created_by != user_uuid and not is_admin_user(db, user_uuid):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No autorizado. Solo el creador o un administrador pueden eliminar el proyecto.",
+        )
+
     try:
         # 1. ELIMINAR LANDING PAGE PRIMERO
         landing_page = db.query(LandingPage).filter(LandingPage.proyecto_id == proyecto_id).first()
@@ -160,6 +201,12 @@ def delete_proyecto(current_user: TokenData, db: Session, proyecto_id: UUID) -> 
         raise e
 
 def assign_proyecto(current_user: TokenData, db: Session, proyecto_id: UUID, assigned_to: UUID) -> Proyecto:
+    # Asignar es una acción de administración: solo admin/master.
+    if not is_admin_user(db, current_user.get_uuid()):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No autorizado. Solo administradores pueden asignar proyectos.",
+        )
     proyecto = get_proyecto_by_id(current_user, db, proyecto_id)
 
     proyecto.assigned_to = assigned_to

@@ -7,40 +7,22 @@ from src.auth.models import TokenData
 from src.entities.landing_page import LandingPage
 from src.entities.proyecto import Proyecto
 from src.exceptions import LandingPageCreationError, LandingPageNotFoundError
+from src.auth import roles
+from src.auth.permissions import get_user_role
 import logging
 
-# Lista de IDs de administradores 
-ADMIN_USER_IDS = [
-  '65cd97a4-c3b9-4bfd-b014-55457ae847e3',
-  'f49cda9b-2138-435e-a497-fda85be87e63',
-  'c7c17838-074d-44fa-9248-8dc87c15edd5',
-  '152c46be-e2f4-48da-86b1-592af570624a',
-  'b43f1d04-f339-4cf9-8e4e-4f127f12af5a',
-  '4007b1aa-30a9-4167-8535-639180f8fbc4',
-  ]
-
-def is_admin_user(user_uuid) -> bool:
-    """Verificar si el usuario es administrador"""
-    if user_uuid is None:
-        return False
-    
-    # Convertir a string para comparar, manejar tanto UUID como string
-    user_str = str(user_uuid)
-    is_admin = user_str in ADMIN_USER_IDS
-    
-    return is_admin
 
 def create_landing_page(current_user: TokenData, db: Session, landing_page: models.LandingPageCreate) -> LandingPage:
     try:
-        # Verificar que el proyecto existe y el usuario tiene permisos
+        # Solo administradores pueden crear landing pages.
+        user_uuid = current_user.get_uuid()
+        if not roles.can_create_landing_page(get_user_role(db, user_uuid)):
+            raise LandingPageCreationError("Solo administradores pueden crear landing pages")
+
+        # Verificar que el proyecto existe
         proyecto = db.query(Proyecto).filter(Proyecto.id == landing_page.proyecto_id).first()
         if not proyecto:
             raise LandingPageCreationError("Proyecto not found")
-        
-        # Verificar permisos: solo creador, asignado del proyecto o admin pueden crear LP
-        user_uuid = current_user.get_uuid()
-        if not is_admin_user(user_uuid) and proyecto.created_by != user_uuid and proyecto.assigned_to != user_uuid:
-            raise LandingPageCreationError("Insufficient permissions to create landing page")
         
         # Verificar que no existe ya una LP para este proyecto (relación 1:1)
         existing_lp = db.query(LandingPage).filter(LandingPage.proyecto_id == landing_page.proyecto_id).first()
@@ -70,8 +52,8 @@ def get_landing_pages(current_user: TokenData, db: Session, is_published: Option
     
     user_uuid = current_user.get_uuid()
     
-    # Si es admin, puede ver todas las landing pages
-    if not is_admin_user(user_uuid):
+    # Supervisores (admin/editor) pueden ver todas las landing pages
+    if not roles.can_view_all_content(get_user_role(db, user_uuid)):
         # Filtrar por permisos: solo LPs de proyectos donde el usuario está involucrado
         query = query.filter(
             (Proyecto.created_by == user_uuid) | (Proyecto.assigned_to == user_uuid)
@@ -93,8 +75,8 @@ def get_landing_page_by_id(current_user: TokenData, db: Session, landing_page_id
     
     user_uuid = current_user.get_uuid()
     
-    # Si no es admin, verificar permisos a través del proyecto
-    if not is_admin_user(user_uuid):
+    # Si no es supervisor, verificar permisos a través del proyecto
+    if not roles.can_view_all_content(get_user_role(db, user_uuid)):
         proyecto = db.query(Proyecto).filter(Proyecto.id == landing_page.proyecto_id).first()
         if proyecto and proyecto.created_by != user_uuid and proyecto.assigned_to != user_uuid:
             raise LandingPageNotFoundError("Insufficient permissions to access this landing page")
@@ -124,7 +106,7 @@ def delete_landing_page(current_user: TokenData, db: Session, landing_page_id: U
     user_uuid = current_user.get_uuid()
     
     # Verificar permisos adicionales para eliminar (solo creador del proyecto o admin)
-    if not is_admin_user(user_uuid):
+    if not roles.is_admin(get_user_role(db, user_uuid)):
         proyecto = db.query(Proyecto).filter(Proyecto.id == landing_page.proyecto_id).first()
         if proyecto and proyecto.created_by != user_uuid:
             raise LandingPageNotFoundError("Insufficient permissions to delete this landing page")
@@ -160,11 +142,11 @@ def get_landing_page_by_proyecto(current_user: TokenData, db: Session, proyecto_
     
     user_uuid = current_user.get_uuid()
     
-    # Verificar si es admin ANTES de revisar permisos específicos
-    is_admin = is_admin_user(user_uuid)
-    
-    if is_admin:
-        logging.info(f"✅ DEBUG: Admin user has access to all proyectos")
+    # Supervisores (admin/editor) acceden a todos los proyectos
+    can_see_all = roles.can_view_all_content(get_user_role(db, user_uuid))
+
+    if can_see_all:
+        logging.info(f"✅ DEBUG: Supervisor user has access to all proyectos")
     else:
         
         # Comparar UUIDs

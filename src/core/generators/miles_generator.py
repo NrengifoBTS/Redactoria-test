@@ -19,6 +19,8 @@ _RESTRICCIONES = (
     "'Disfruta', 'Aprovecha'. Varía con: 'Explora', 'Vive', 'Reserva', 'Conoce', "
     "'Siente', 'Accede', 'Recorre', preguntas directas, etc.\n"
     "- Nunca usarás doble ** para negrita.\n"
+    "- PROHIBIDO usar guiones largos: ni em-dash (—) ni en-dash (–). "
+    "Usa siempre el guion corto normal (-) o reescribe la frase con comas.\n"
     "- Mantén el número de palabras indicado.\n"
     "- Solo usa | al inicio y final de cada bloque, NUNCA dentro del contenido.\n\n"
     "ORTOGRAFÍA ESTRICTA:\n"
@@ -174,10 +176,12 @@ class ContentGenerator:
             return "vjm"
         return b
 
-    def __init__(self, llm_client: Optional[LLMClient] = None, brand: str = "mcr"):
+    def __init__(self, llm_client: Optional[LLMClient] = None, brand: str = "mcr", fast_mode: bool = False):
         self.brand = self._normalize_brand(brand)
         self.llm = llm_client or LLMClient()
         self.system_message = _BRAND_SYSTEMS.get(self.brand, SYSTEM_MCR)
+        # fast_mode: omite el paso de supervisión SEO por LLM (más rápido, menos pulido).
+        self.fast_mode = fast_mode
 
     @property
     def brand_name(self) -> str:
@@ -268,7 +272,8 @@ class ContentGenerator:
             if not value or key == "tit" or len(value.split()) < 5:
                 supervised[key] = value
                 continue
-            value = supervisor_seo(value, self.llm, key) or value
+            if not self.fast_mode:
+                value = supervisor_seo(value, self.llm, key) or value
             value = supervisor_structure(value) or value
             supervised[key] = value
 

@@ -1,17 +1,7 @@
 /* ── Fuente ───────────────────────────────────────────────────────────────── */
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
-
 .rd-root,
 .rd-root * {
-  font-family:
-    "Inter",
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    Roboto,
-    "Helvetica Neue",
-    Arial,
-    sans-serif;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -37,14 +27,20 @@
 }
 
 /* ── Navbar ──────────────────────────────────────────────────────────────── */
-.rd-navbar {
-  background: #ffffff;
-  border-bottom: 1px solid #f0f0f0;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
-  padding: 10px 24px;
+/* Cabecera fija: navbar + toolbar viajan juntos como un solo bloque sticky.
+   Evita el bug del `top: 60px` mágico que solapaba la toolbar. */
+.rd-header-stack {
   position: sticky;
   top: 0;
   z-index: 100;
+}
+
+.rd-navbar {
+  background: #ffffff;
+  border-top: 3px solid var(--accent);
+  border-bottom: 1px solid #eef2f7;
+  box-shadow: 0 2px 12px rgba(15, 23, 42, 0.06);
+  padding: 10px 24px;
 }
 
 /* ── Toolbar ─────────────────────────────────────────────────────────────── */
@@ -53,15 +49,25 @@
   border-bottom: 1px solid #ececec;
   padding: 8px 24px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
-  position: sticky;
-  top: 60px;
-  z-index: 99;
 }
 .rd-toolbar-buttons {
   display: flex;
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+}
+/* Agrupación de la toolbar por propósito */
+.rd-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+/* Empuja un grupo hacia la derecha y lo separa visualmente */
+.rd-toolbar-group-right {
+  margin-left: auto;
+  padding-left: 12px;
+  border-left: 1px solid #e2e8f0;
 }
 
 /* ── Editor de celda ─────────────────────────────────────────────────────── */
@@ -96,7 +102,7 @@ td:focus {
 }
 
 *::selection {
-  background: rgba(59, 130, 246, 0.25);
+  background: rgba(30, 95, 214, 0.22);
 }
 
 textarea,
@@ -156,13 +162,13 @@ textarea,
 }
 
 .rd-btn-primary {
-  background: #3b82f6;
+  background: var(--accent);
   color: #ffffff;
-  box-shadow: 0 1px 3px rgba(59, 130, 246, 0.3);
+  box-shadow: 0 1px 3px rgba(30, 95, 214, 0.3);
 }
 .rd-btn-primary:hover:not(:disabled) {
-  background: #2563eb;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+  background: var(--accent-600);
+  box-shadow: 0 4px 12px rgba(30, 95, 214, 0.4);
 }
 
 .rd-btn-success {
@@ -210,59 +216,73 @@ textarea,
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1) !important;
 }
 
-.rd-tbtn-purple {
-  background: #8b5cf6;
+/* ── Roles semánticos de la toolbar ──────────────────────────────────────────
+   Antes la toolbar usaba 6 tonos decorativos sin sistema (morado/índigo/rosa/
+   teal/ámbar/verde). Ahora se agrupan por PROPÓSITO, no por color:
+   · Generar con IA (bloque + masivo) → acento azul de marca (acción primaria).
+   · Regenerar sección            → azul suave (variante secundaria del azul).
+   · Traducir (celda + masivo)     → verde positivo (acción de salida).
+   Las clases conservan sus nombres para no tocar el JSX/lógica.            */
+
+/* Generar IA — primaria (rd-tbtn-purple = por bloque, rd-tbtn-indigo = masivo) */
+.rd-tbtn-purple,
+.rd-tbtn-indigo {
+  background: var(--accent);
   color: #fff;
-  box-shadow: 0 1px 3px rgba(139, 92, 246, 0.3);
+  box-shadow: 0 1px 3px rgba(30, 95, 214, 0.3);
 }
-.rd-tbtn-purple:hover:not(:disabled) {
-  background: #7c3aed;
-  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.45);
+.rd-tbtn-purple:hover:not(:disabled),
+.rd-tbtn-indigo:hover:not(:disabled) {
+  background: var(--accent-600);
+  box-shadow: 0 4px 12px rgba(30, 95, 214, 0.4);
 }
-.rd-tbtn-success {
-  background: #10b981;
+
+/* Regenerar sección — secundaria azul (outline) */
+.rd-tbtn-teal {
+  background: var(--accent-50);
+  color: var(--accent-700);
+  border: 1px solid var(--accent-100);
+  box-shadow: none;
+}
+.rd-tbtn-teal:hover:not(:disabled) {
+  background: var(--accent-100);
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px rgba(30, 95, 214, 0.18);
+}
+
+/* Traducir — positiva (rd-tbtn-success = celda, rd-tbtn-pink = masivo) */
+.rd-tbtn-success,
+.rd-tbtn-pink {
+  background: var(--positive);
   color: #fff;
   box-shadow: 0 1px 3px rgba(16, 185, 129, 0.3);
 }
-.rd-tbtn-success:hover:not(:disabled) {
-  background: #059669;
-  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.45);
-}
-.rd-tbtn-indigo {
-  background: #6366f1;
-  color: #fff;
-  box-shadow: 0 1px 3px rgba(99, 102, 241, 0.3);
-}
-.rd-tbtn-indigo:hover:not(:disabled) {
-  background: #4f46e5;
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.45);
-}
-.rd-tbtn-pink {
-  background: #ec4899;
-  color: #fff;
-  box-shadow: 0 1px 3px rgba(236, 72, 153, 0.3);
-}
+.rd-tbtn-success:hover:not(:disabled),
 .rd-tbtn-pink:hover:not(:disabled) {
-  background: #db2777;
-  box-shadow: 0 4px 12px rgba(236, 72, 153, 0.45);
+  background: var(--positive-600);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
 }
+
+/* Advertencia — uso puntual */
 .rd-tbtn-warning {
-  background: #f59e0b;
+  background: var(--warn);
   color: #fff;
-  box-shadow: 0 1px 3px rgba(245, 158, 11, 0.3);
+  box-shadow: 0 1px 3px rgba(180, 83, 9, 0.3);
 }
 .rd-tbtn-warning:hover:not(:disabled) {
-  background: #d97706;
-  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.45);
+  background: #92400e;
+  box-shadow: 0 4px 12px rgba(180, 83, 9, 0.4);
 }
+
+/* Estados deshabilitados */
 .rd-tbtn-inactive {
-  background: #f1f5f9;
-  color: #94a3b8;
+  background: var(--ink-100);
+  color: var(--ink-400);
   cursor: not-allowed;
   box-shadow: none;
 }
 .rd-tbtn-muted {
-  background: #94a3b8;
+  background: var(--ink-400);
   color: #fff;
   cursor: not-allowed;
   box-shadow: none;
@@ -283,8 +303,8 @@ textarea,
 .rd-spinner-dark {
   width: 22px;
   height: 22px;
-  border: 3px solid rgba(139, 92, 246, 0.15);
-  border-top-color: #8b5cf6;
+  border: 3px solid rgba(30, 95, 214, 0.15);
+  border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.65s linear infinite;
   flex-shrink: 0;

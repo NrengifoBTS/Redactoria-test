@@ -1,128 +1,153 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useApp } from './context/AppContext'; 
-import './Loginmodal.css';
+import React, { useState } from "react";
+import { useApp } from "./context/AppContext";
+import { Mail, Lock, Eye, EyeOff, AlertTriangle, ShieldAlert, X, ArrowRight } from "lucide-react";
+import "./Loginmodal.css";
 
 function LoginModal({ isOpen, onClose }) {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState("");
+  const [errorKind, setErrorKind] = useState("error"); // 'error' | 'warning'
   const [loading, setLoading] = useState(false);
-  
-  const { login } = useApp(); 
-  const navigate = useNavigate();
 
-  // No mostrar nada si el modal no está abierto
+  const { login } = useApp();
+
   if (!isOpen) return null;
+
+  const fail = (message, kind = "error") => {
+    setError(message);
+    setErrorKind(kind);
+  };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    if (!username || !password) {
-      setError('Username and password are required');
+    setError("");
+
+    if (!email || !password) {
+      fail("Ingresa tu correo y contraseña.");
       return;
     }
 
     setLoading(true);
-
     try {
-      const result = await login({ username, password });
-
+      const result = await login({ username: email, password });
       setLoading(false);
 
       if (result.success) {
-        // Limpiar el formulario
-        setUsername('');
-        setPassword('');
-        setError('');
+        setEmail("");
+        setPassword("");
+        setError("");
         onClose();
       } else {
-        setError(result.error || 'Authentication failed!');
+        // 403 = cuenta desactivada → aviso (ámbar). Resto → error (rojo).
+        fail(
+          result.error || "No se pudo iniciar sesión.",
+          result.status === 403 ? "warning" : "error",
+        );
       }
-    } catch (error) {
+    } catch (err) {
       setLoading(false);
-      setError('An error occurred. Please try again later.');
+      fail("Ocurrió un error. Intenta de nuevo.");
     }
   };
 
   const handleOverlayClick = (e) => {
-    // Cerrar el modal solo si se hace clic en el overlay (fondo oscuro)
-    if (e.target === e.currentTarget) {
-      onClose();
-    }
+    if (e.target === e.currentTarget) onClose();
   };
 
   return (
     <div className="modal-overlay" onClick={handleOverlayClick}>
       <div className="modal-contentlp">
-        {/* Botón de cerrar */}
         <button className="modal-close" onClick={onClose} aria-label="Cerrar">
-          ✕
+          <X size={18} />
         </button>
 
-        {/* Contenedor del login */}
         <div className="login-modal-card">
-          {/* Header */}
           <div className="login-modal-header">
             <div className="login-modal-avatar">
-              <span>👤</span>
+              <Lock strokeWidth={1.75} />
             </div>
-            <h1 className="login-modal-title">Login</h1>
-            <p className="login-modal-subtitle">Sign in to your account</p>
+            <h1 className="login-modal-title">Iniciar sesión</h1>
+            <p className="login-modal-subtitle">Accede a tu cuenta para continuar</p>
           </div>
 
-          {/* Formulario */}
-          <form onSubmit={handleSubmit} className="login-modal-form">
-            {/* Campo Username */}
+          <form onSubmit={handleSubmit} className="login-modal-form" noValidate>
+            {/* Correo */}
             <div className="modal-form-group">
-              <label className="modal-form-label">Username</label>
+              <label className="modal-form-label" htmlFor="login-email">
+                Correo electrónico
+              </label>
               <div className="modal-input-wrapper">
-                <span className="modal-input-icon">👤</span>
+                <span className="modal-input-icon">
+                  <Mail />
+                </span>
                 <input
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
+                  id="login-email"
+                  type="email"
+                  autoComplete="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   className="modal-form-input"
-                  placeholder="Enter your username"
+                  placeholder="tucorreo@ejemplo.com"
                 />
               </div>
             </div>
 
-            {/* Campo Password */}
+            {/* Contraseña */}
             <div className="modal-form-group">
-              <label className="modal-form-label">Password</label>
+              <label className="modal-form-label" htmlFor="login-password">
+                Contraseña
+              </label>
               <div className="modal-input-wrapper">
-                <span className="modal-input-icon">🔒</span>
+                <span className="modal-input-icon">
+                  <Lock />
+                </span>
                 <input
-                  type="password"
+                  id="login-password"
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="modal-form-input"
-                  placeholder="Enter your password"
+                  className="modal-form-input has-toggle"
+                  placeholder="Tu contraseña"
                 />
+                <button
+                  type="button"
+                  className="modal-input-toggle"
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
               </div>
             </div>
 
-            {/* Mensaje de error */}
+            {/* Mensaje de error / aviso */}
             {error && (
-              <div className="modal-error-message">
-                <span className="modal-error-icon">⚠️</span>
+              <div
+                className={`modal-error-message ${errorKind === "warning" ? "is-warning" : "is-error"}`}
+                role="alert"
+              >
+                <span className="modal-error-icon">
+                  {errorKind === "warning" ? <ShieldAlert /> : <AlertTriangle />}
+                </span>
                 <p className="modal-error-text">{error}</p>
               </div>
             )}
 
-            {/* Botón de submit */}
-            <button
-              type="submit"
-              disabled={loading}
-              className="login-modal-button"
-            >
+            {/* Botón */}
+            <button type="submit" disabled={loading} className="login-modal-button">
               {loading ? (
-                <div className="modal-loading-spinner">
-                  <div className="modal-spinner"></div>
-                  <span>Logging in...</span>
-                </div>
+                <span className="modal-loading-spinner">
+                  <span className="modal-spinner" />
+                  Ingresando...
+                </span>
               ) : (
-                'Login'
+                <span className="login-modal-button-label">
+                  Iniciar sesión
+                  <ArrowRight size={18} />
+                </span>
               )}
             </button>
           </form>

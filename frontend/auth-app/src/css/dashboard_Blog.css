@@ -8,9 +8,9 @@
 }
 
 body {
-  font-family: "Inter", "Segoe UI", system-ui, sans-serif;
-  background: #f8fafc; /* Color de fondo más moderno (Slate 50) */
-  color: #000000;
+  font-family: var(--font-sans);
+  background: #f8fafc; /* Slate 50 */
+  color: var(--ink-900);
   line-height: 1.5;
 }
 
@@ -32,6 +32,8 @@ body {
 }
 
 .stat-card {
+  position: relative;
+  overflow: hidden;
   background: #ffffff;
   border-radius: 1rem;
   padding: 1.25rem;
@@ -43,10 +45,38 @@ body {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
 }
 
+/* Barra de acento lateral por tarjeta */
+.stat-card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  background: var(--accent);
+}
+.stat-card:nth-child(1)::before {
+  background: var(--accent);
+}
+.stat-card:nth-child(2)::before {
+  background: #10b981;
+}
+.stat-card:nth-child(3)::before {
+  background: #f59e0b;
+}
+.stat-card:nth-child(4)::before {
+  background: #8b5cf6;
+}
+
+/* La barra deja espacio al contenido */
+.stat-card .stat-icon {
+  margin-left: 4px;
+}
+
 .stat-card:hover {
   transform: translateY(-3px);
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-  border-color: #3b82f6;
+  box-shadow: var(--shadow-md);
+  border-color: var(--accent);
 }
 
 /* Contenedor del Icono (Ahora a la izquierda) */
@@ -79,17 +109,19 @@ body {
 }
 
 .stat-card h2 {
-  font-size: 1.5rem; /* Tamaño más real para un Dashboard */
+  font-size: 2rem; /* Número protagonista */
   color: #0f172a;
   font-weight: 800;
-  margin-top: 4px;
+  letter-spacing: -0.03em;
+  margin-top: 6px;
   line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Colores por tarjeta */
 .stat-card:nth-child(1) .stat-icon {
-  background: #eff6ff;
-  color: #3b82f6;
+  background: var(--accent-50);
+  color: var(--accent);
 }
 .stat-card:nth-child(2) .stat-icon {
   background: #ecfdf5;
@@ -158,6 +190,15 @@ body {
   padding: 0.65rem 1rem 0.65rem 2.5rem !important;
   border-radius: 0.75rem;
   border: 1px solid #cbd5e1;
+  transition:
+    border-color 0.2s var(--ease),
+    box-shadow 0.2s var(--ease);
+}
+
+.search-wrapper input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(30, 95, 214, 0.15);
 }
 
 .search-wrapper i {
@@ -189,6 +230,19 @@ body {
   cursor: pointer;
   white-space: nowrap; /* Evita que el texto interno se amontone */
   min-width: 120px;
+  transition:
+    border-color 0.2s var(--ease),
+    box-shadow 0.2s var(--ease);
+}
+
+.filter-select:hover {
+  border-color: var(--ink-400);
+}
+
+.filter-select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(30, 95, 214, 0.15);
 }
 
 /* Grupo de botones finales */
@@ -220,7 +274,7 @@ body {
 }
 
 .btn-create-new {
-  background: #3b82f6;
+  background: var(--accent);
   color: white;
   padding: 0.65rem 1.25rem;
   border-radius: 0.75rem;
@@ -231,6 +285,20 @@ body {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  transition:
+    background 0.2s var(--ease),
+    transform 0.12s var(--ease),
+    box-shadow 0.2s var(--ease);
+  box-shadow: 0 6px 14px -6px rgba(30, 95, 214, 0.6);
+}
+
+.btn-create-new:hover {
+  background: var(--accent-600);
+  transform: translateY(-1px);
+}
+
+.btn-create-new:active {
+  transform: translateY(0) scale(0.99);
 }
 /* ==========================================================================
    4. TABLA MODERNA
@@ -239,7 +307,7 @@ body {
   background: white;
   border-radius: 1rem;
   border: 1px solid #e2e8f0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
 
@@ -270,8 +338,12 @@ body {
   border-bottom: 1px solid #f1f5f9;
 }
 
+.modern-table tbody tr {
+  transition: background-color 0.15s var(--ease);
+}
+
 .modern-table tbody tr:hover {
-  background-color: #f8fafc;
+  background-color: var(--accent-50);
 }
 
 /* ==========================================================================
@@ -352,6 +424,14 @@ body {
   background: #f1f5f9; /* Fondo gris muy suave por defecto */
 }
 
+.btn-action:hover {
+  transform: translateY(-1px);
+}
+
+.btn-action:active {
+  transform: translateY(0) scale(0.94);
+}
+
 /* Iconos dentro de botones */
 .btn-action i {
   font-size: 1.2rem;
@@ -374,10 +454,10 @@ body {
 }
 
 .btn-action.edit:hover {
-  background: #dbeafe;
+  background: var(--accent-100);
 }
 .btn-action.edit:hover i {
-  color: #2563eb;
+  color: var(--accent-600);
 }
 
 .btn-action.delete:hover {
@@ -406,9 +486,7 @@ body {
   width: 100%;
   max-width: 550px;
   border-radius: 1rem;
-  box-shadow:
-    0 20px 25px -5px rgba(0, 0, 0, 0.1),
-    0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--shadow-lg);
   overflow: hidden;
   animation: modalSlideUp 0.3s ease-out;
 }
@@ -497,10 +575,11 @@ body {
 }
 
 .modal-form input:focus,
-.modal-form select:focus {
+.modal-form select:focus,
+.modal-form textarea:focus {
   outline: none;
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(30, 95, 214, 0.15);
 }
 
 /* Sección dinámica */
@@ -519,18 +598,24 @@ body {
 
 .btn-generate {
   width: 100%;
-  background: #3b82f6;
+  background: var(--accent);
   color: white;
   padding: 0.8rem;
   border-radius: 0.6rem;
   font-weight: 600;
   border: none;
   cursor: pointer;
-  transition: background 0.2s;
+  transition:
+    background 0.2s var(--ease),
+    transform 0.12s var(--ease);
 }
 
 .btn-generate:hover:not(:disabled) {
-  background: #2563eb;
+  background: var(--accent-600);
+}
+
+.btn-generate:active:not(:disabled) {
+  transform: scale(0.99);
 }
 
 .btn-generate:disabled {
@@ -582,8 +667,9 @@ body {
   margin-bottom: 1.5rem;
   font-size: 1.5rem;
   font-weight: 700;
-  color: #1a202c;
-  border-bottom: 2px solid #00eba7; /* Tu color verde */
+  letter-spacing: -0.02em;
+  color: var(--ink-900);
+  border-bottom: 2px solid var(--accent);
   display: inline-block;
 }
 
@@ -636,4 +722,176 @@ body {
 
 .modal-actions .btn-generate {
   min-width: 140px;
+}
+
+/* ==========================================================================
+   MODALES DE FORMULARIO — sistema unificado y SCOPED con .rd-modal
+   Las clases .modal-* son globales en CRA (colisionan con Login y la vista
+   de Generación). Scopeamos con .rd-modal para mejorar SOLO estos modales
+   sin afectar otras vistas. La especificidad (2 clases) gana siempre.
+   ========================================================================== */
+@keyframes rdModalFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes rdModalSlideUp {
+  from { opacity: 0; transform: translateY(16px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.rd-modal.modal-overlay,
+.rd-modal.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1100;
+  padding: 20px;
+  animation: rdModalFadeIn 0.2s ease-out;
+}
+
+.rd-modal .modal-content {
+  background: #ffffff;
+  width: 100%;
+  max-width: 560px;
+  max-height: 90vh;
+  overflow-y: auto;
+  border: 1px solid #eef2f7;
+  border-top: 3px solid var(--accent);
+  border-radius: 1rem;
+  box-shadow: 0 24px 60px -15px rgba(15, 23, 42, 0.35);
+  padding: 0; /* el respiro lo ponen header / form / title */
+  animation: rdModalSlideUp 0.28s var(--ease);
+}
+
+/* Título suelto (EditBlogModal: va directo dentro de .modal-content) */
+.rd-modal .modal-title {
+  display: block;
+  margin: 0;
+  padding: 1.5rem 1.5rem 0;
+  font-size: 1.4rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--ink-900);
+  border-bottom: none;
+}
+
+/* Cabecera con botón cerrar (ModalCreacionBlog) */
+.rd-modal .modal-header {
+  padding: 1.35rem 1.5rem;
+  border-bottom: 1px solid #eef2f7;
+}
+.rd-modal .modal-header h2 {
+  font-size: 1.25rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--ink-900);
+}
+.rd-modal .btn-close {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #f1f5f9;
+  color: #64748b;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease);
+}
+.rd-modal .btn-close:hover {
+  background: #fee2e2;
+  color: var(--danger);
+}
+
+/* Cuerpo del formulario */
+.rd-modal .modal-form {
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+.rd-modal .form-group {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.rd-modal .form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+.rd-modal .modal-form label {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #475569;
+}
+.rd-modal .modal-form input,
+.rd-modal .modal-form select,
+.rd-modal .modal-form textarea {
+  width: 100%;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.5rem;
+  font-size: 0.9rem;
+  box-sizing: border-box;
+  transition: border-color 0.18s var(--ease), box-shadow 0.18s var(--ease);
+}
+.rd-modal .modal-form input:focus,
+.rd-modal .modal-form select:focus,
+.rd-modal .modal-form textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(30, 95, 214, 0.15);
+}
+.rd-modal .dynamic-fields-section {
+  margin: 0;
+}
+
+/* Pie / acciones (van dentro de .modal-form, así que solo separación) */
+.rd-modal .modal-footer,
+.rd-modal .modal-actions {
+  margin: 0.25rem 0 0 0;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+
+/* Botones */
+.rd-modal .btn-generate {
+  background: var(--accent);
+  color: #ffffff;
+  border: none;
+  padding: 0.7rem 1.2rem;
+  border-radius: 0.6rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.15s var(--ease), transform 0.12s var(--ease),
+    box-shadow 0.15s var(--ease);
+}
+.rd-modal .btn-generate:hover:not(:disabled) {
+  filter: brightness(1.06);
+  box-shadow: 0 8px 18px -8px rgba(30, 95, 214, 0.6);
+}
+.rd-modal .btn-generate:active:not(:disabled) {
+  transform: translateY(1px) scale(0.99);
+}
+.rd-modal .btn-cancel {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+  padding: 0.7rem 1.2rem;
+  border-radius: 0.6rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s var(--ease), transform 0.12s var(--ease);
+}
+.rd-modal .btn-cancel:hover {
+  background: #e2e8f0;
+}
+.rd-modal .btn-cancel:active {
+  transform: translateY(1px) scale(0.99);
 }

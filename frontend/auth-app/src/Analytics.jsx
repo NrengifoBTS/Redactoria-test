@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import apiService from "./services/apiService";
 import { useApp } from "./context/AppContext";
-import { isAdminUser, isEditorUser } from "./utils/roles";
+import { isAdminUser } from "./utils/roles";
 
 function Analytics() {
   const navigate = useNavigate();
@@ -62,8 +62,8 @@ function Analytics() {
       return;
     }
 
-    // Check permissions
-    if (!isAdminUser(user.id) && !isEditorUser(user.id)) {
+    // Analytics es solo para administradores
+    if (!isAdminUser(user)) {
       navigate("/dashboard");
     }
   }, [user, userLoading, navigate]);
@@ -86,7 +86,7 @@ function Analytics() {
       }
     };
 
-    if (user && (isAdminUser(user.id) || isEditorUser(user.id))) {
+    if (user && isAdminUser(user)) {
       loadFiltersData();
     }
   }, [user]);
@@ -174,6 +174,7 @@ function Analytics() {
         params.append("proyecto_general", selectedProyectoGeneral);
       if (selectedLP) params.append("landing_page_id", selectedLP);
       if (selectedUser) params.append("user_id", selectedUser);
+      if (!includeAdmins) params.append("exclude_admins", "true");
       const response = await apiService.get(
         `/logs/ria-v2-metrics?${params.toString()}`,
       );
@@ -284,7 +285,7 @@ function Analytics() {
           display: "flex",
           justifyContent: "center",
           alignItems: "center",
-          height: "100vh",
+          height: "100dvh",
           backgroundColor: "#f9fafb",
         }}
       >
@@ -309,7 +310,7 @@ function Analytics() {
           display: "flex",
           justifyContent: "center",
           alignItems: "center",
-          height: "100vh",
+          height: "100dvh",
           backgroundColor: "#f9fafb",
         }}
       >
@@ -329,7 +330,7 @@ function Analytics() {
   return (
     <div
       style={{
-        minHeight: "100vh",
+        minHeight: "100dvh",
         backgroundColor: "#f9fafb",
         padding: "24px",
       }}
@@ -388,7 +389,7 @@ function Analytics() {
               alignItems: "center",
               gap: "8px",
               padding: "8px 16px",
-              backgroundColor: "#3b82f6",
+              backgroundColor: "#1e5fd6",
               color: "white",
               border: "none",
               borderRadius: "8px",
@@ -641,7 +642,7 @@ function Analytics() {
                   width: "40px",
                   height: "20px",
                   cursor: "pointer",
-                  accentColor: "#3b82f6",
+                  accentColor: "#1e5fd6",
                 }}
               />
               <span>Incluir actividad de administradores</span>
@@ -683,10 +684,10 @@ function Analytics() {
               >
                 {/* Generation Success Rate */}
                 <MetricCard
-                  icon={<Zap size={24} style={{ color: "#3b82f6" }} />}
+                  icon={<Zap size={24} style={{ color: "#1e5fd6" }} />}
                   title="Tasa de Éxito IA"
                   value={`${Math.round((metrics.generation_success_rate || 0) * 100)}%`}
-                  color="#3b82f6"
+                  color="#1e5fd6"
                   subtitle={`${metrics.successful_generations || 0} exitosas / ${metrics.failed_generations || 0} fallidas`}
                 />
 
@@ -760,9 +761,9 @@ function Analytics() {
                       <Line
                         type="monotone"
                         dataKey="generaciones"
-                        stroke="#3b82f6"
+                        stroke="#1e5fd6"
                         strokeWidth={2}
-                        dot={{ fill: "#3b82f6" }}
+                        dot={{ fill: "#1e5fd6" }}
                       />
                       <Line
                         type="monotone"

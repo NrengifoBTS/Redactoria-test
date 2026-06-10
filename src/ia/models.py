@@ -17,6 +17,9 @@ class IAContentRequest(BaseModel):
     faq_questions: Optional[List[str]] = None
     car_types: Optional[List[str]] = None
     fav_city_questions: Optional[List[str]] = None
+    # Regeneración por sección: campo destino (ej. "desc_3") al que se mapea
+    # el único ítem regenerado. Solo lo usa el endpoint /section.
+    target_field: Optional[str] = None
 
 class StructuredContent(BaseModel):
     """Contenido estructurado específico por bloque"""

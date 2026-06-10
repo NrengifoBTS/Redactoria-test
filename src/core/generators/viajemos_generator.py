@@ -20,6 +20,8 @@ _RESTRICCIONES = (
     "'Disfruta', 'Aprovecha'. Varía con: 'Explora', 'Vive', 'Reserva', 'Conoce', "
     "'Siente', 'Accede', 'Recorre', preguntas directas, etc.\n"
     "- Nunca usarás doble ** para negrita.\n"
+    "- PROHIBIDO usar guiones largos: ni em-dash (—) ni en-dash (–). "
+    "Usa siempre el guion corto normal (-) o reescribe la frase con comas.\n"
     "- Mantén el número de palabras indicado.\n"
     "- Solo usa | al inicio y final de cada bloque, NUNCA dentro del contenido.\n\n"
     "ORTOGRAFÍA ESTRICTA:\n"

@@ -15,11 +15,15 @@ import {
   ArrowLeft,
   CheckCircle2,
   AlertCircle,
+  RefreshCw,
+  Zap,
+  Globe,
+  Sparkles,
 } from "lucide-react";
 import { useApp } from "./context/AppContext";
 import { getExcelTemplate, columnHeaders, tableConfig } from "./templateConfig";
 import tableStyles, { getContainerStyle, getCellStyle } from "./tableStyles";
-import { isAdminUser, isEditorUser } from "./utils/roles";
+import { roleLabel } from "./utils/roles";
 import apiService from "./services/apiService";
 import { colorizeField } from "./utils/colorUtils";
 
@@ -483,13 +487,15 @@ const TiptapCellEditor = ({
   const editor = useEditor({
     extensions: [StarterKit, TextStyle, Color],
     content: content,
+    // Enfocar al entrar en edición (doble clic), para no requerir un clic extra.
+    autofocus: "end",
     onSelectionUpdate: ({ editor }) => {
       onSelection();
     },
     editorProps: {
       attributes: {
         class: "cell-editor",
-        style: `width: 100%; height: 100%; min-height: 40px; padding: 8px; border: 2px solid #3b82f6; outline: none; background-color: white;`,
+        style: `width: 100%; height: 100%; min-height: 40px; padding: 8px; border: 2px solid var(--accent); outline: none; background-color: white;`,
       },
       handleKeyDown: (view, event) => {
         if (event.key === "Enter" && event.shiftKey) {
@@ -612,7 +618,7 @@ const BulkGenerationProgress = React.memo(function BulkGenerationProgress({
             style={{
               width: `${percentage}%`,
               height: "100%",
-              background: "linear-gradient(90deg, #8b5cf6, #6366f1)",
+              background: "linear-gradient(90deg, var(--accent), var(--accent-600))",
               transition: "width 0.3s ease",
               borderRadius: "6px",
             }}
@@ -1674,6 +1680,102 @@ export default function Redactor() {
     return null;
   };
 
+  // Tipos de bloque cuyas secciones (título o descripción) se pueden regenerar.
+  // FAQ se excluye a propósito: es contenido predefinido y muy aceptado.
+  const SECTION_REGEN_TYPES = new Set([
+    "quicksearch",
+    "fleet",
+    "deals",
+    "agencies",
+    "reviews",
+    "rentcompanies",
+    "bloquehistoria",
+    "rentacar",
+    "car_rental",
+    "fleetcarrusel",
+    "advicestipocarrusel",
+    "fav_city",
+    "locationscarrusel",
+  ]);
+
+  // Homologa aliases de tipo de bloque (igual que el backend) para que la
+  // detección de sección no falle por variantes de nombre.
+  const normalizeBlockType = (blockType) => {
+    const bt = (blockType || "").trim().toLowerCase();
+    const aliasMap = {
+      favoritecities: "fav_city",
+      favorite_cities: "fav_city",
+      locationscarousel: "locationscarrusel",
+      carrental: "car_rental",
+      faq: "faqs",
+    };
+    return aliasMap[bt] || bt;
+  };
+
+  const stripHtml = (html) =>
+    (html || "").replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").trim();
+
+  // Determina si la celda seleccionada (columna Español) es una SECCIÓN
+  // regenerable —un título de bloque o una descripción— y devuelve los datos
+  // para regenerarla. Retorna null si no aplica: FAQ, disclaimers, celdas que
+  // no son de contenido, o los H3 de ítem (tipo de auto / ciudad) que son el
+  // "input" que da coherencia a su descripción y no deben reescribirse.
+  const getSeccionForCell = (selectedCell, block, tableData) => {
+    if (!selectedCell || !block) return null;
+
+    const blockType = normalizeBlockType(block.type);
+    if (blockType === "faqs" || blockType === "questions") return null;
+    if (!SECTION_REGEN_TYPES.has(blockType)) return null;
+
+    const [row] = selectedCell.split("-").map(Number);
+
+    // Excluir disclaimers (la etiqueta de la columna IT contiene "disclaimer",
+    // incluyendo los typos "desclaimer"/"diclaimer" de algunos templates).
+    const itLabel = (tableData[`${row}-2`]?.content || "").toLowerCase();
+    if (/d[ie]s?claimer/.test(itLabel)) return null;
+
+    const mapping = block.contentMapping || {};
+
+    // Reverse-lookup: ¿qué campo del contentMapping apunta a esta celda?
+    let field = null;
+    for (const [mappedField, mappedCellKey] of Object.entries(mapping)) {
+      if (mappedCellKey === selectedCell) {
+        field = mappedField;
+        break;
+      }
+    }
+
+    if (field) {
+      // Es una DESCRIPCIÓN (de bloque o de ítem).
+      const isItem =
+        (/^desc_\d+$/.test(field)) || (/^faq_\d+$/.test(field));
+      const seedTitle = isItem
+        ? stripHtml(tableData[`${row - 1}-3`]?.content) // H3 del ítem
+        : stripHtml(tableData[`${block.titleRow}-3`]?.content); // H2/H1 del bloque
+      return {
+        field,
+        kind: isItem ? "item" : "block",
+        isTitle: false,
+        descCellKey: selectedCell,
+        seedTitle,
+      };
+    }
+
+    // ¿Es la celda del TÍTULO principal del bloque (H1/H2)?
+    if (block.titleRow !== undefined && selectedCell === `${block.titleRow}-3`) {
+      return {
+        field: "titulo",
+        kind: "title",
+        isTitle: true,
+        descCellKey: selectedCell,
+        seedTitle: stripHtml(tableData[selectedCell]?.content),
+      };
+    }
+
+    // Cualquier otra celda (H3 de ítem, celdas vacías estructurales) → sin botón.
+    return null;
+  };
+
   // En el useEffect donde cargas el template:
   useEffect(() => {
     const loadLandingPage = async () => {
@@ -1740,32 +1842,25 @@ export default function Redactor() {
           // Soportar templates con propiedad "text" (create_template_from_config) o "value"
           const templateText = templateCell?.text || templateCell?.value || "";
           let fallback = "";
-          let isTitleOrDisclaimer = false;
           if (col >= 3) {
+            // En columnas de contenido (Español/Inglés/Portugués) solo los disclaimers
+            // usan el texto del template como fallback. Títulos H1/H2/H3 arrancan en blanco.
             const labelCell = templateData[`${rowStr}-2`];
             const label = (labelCell?.text || labelCell?.value || "").toLowerCase();
-            isTitleOrDisclaimer =
-              label.includes("disclaimer") ||
-              label === "h1" ||
-              label === "h2" ||
-              label.startsWith("h3");
-            if (isTitleOrDisclaimer) {
+            // Tolerar typos presentes en templates de BD: "desclaimer", "diclaimer"
+            if (/d[ie]s?claimer/.test(label)) {
               fallback = templateText;
             }
           } else {
+            // Columnas estructurales (0-2): siempre muestran el texto del template
             fallback = templateText;
           }
 
-          // Para celdas estructurales (col 0-2: sección, bloque, etiqueta H1/H2/H3),
-          // si el contenido guardado está vacío se usa el valor del template como fallback
-          // para evitar que labels como "H2"/"H3" queden vacíos y sean omitidos en el Excel.
           const savedContent = existingCell?.content || "";
           mergedTableData[key] = {
             content: col < 3
               ? (savedContent || fallback)
-              : (isTitleOrDisclaimer
-                  ? (existingCell?.content || fallback)
-                  : (existingCell ? existingCell.content : "")),
+              : (existingCell ? existingCell.content : fallback),
           };
         });
 
@@ -1794,7 +1889,7 @@ export default function Redactor() {
   }, [lpId]);
 
   const [lastSaved, setLastSaved] = useState(null);
-  const [saveStatus, setSaveStatus] = useState("saved");
+  const [saveStatus, setSaveStatus] = useState("idle");
 
   const [selectedCell, setSelectedCell] = useState(null);
   const [selectedRange, setSelectedRange] = useState(null);
@@ -2753,7 +2848,7 @@ export default function Redactor() {
             }}
             style={{
               padding: "0.75rem 1.5rem",
-              backgroundColor: "#3b82f6",
+              backgroundColor: "var(--accent)",
               color: "white",
               border: "none",
               borderRadius: "0.375rem",
@@ -2767,6 +2862,22 @@ export default function Redactor() {
       </div>
     );
   }
+
+  // Marca actual (Viajemos / Miles Car Rental) para mostrar en el navbar
+  const _brandTemplate = getCurrentTemplate();
+  const _brandKey = (_brandTemplate?.proyecto || "").toLowerCase();
+  const _isVjmBrand = _brandKey.includes("viajemos") || _brandKey.includes("vjm");
+  const _isMcrBrand = _brandKey.includes("mcr") || _brandKey.includes("miles");
+  const brandName = _isVjmBrand
+    ? "Viajemos"
+    : _isMcrBrand
+      ? "Miles Car Rental"
+      : _brandTemplate?.proyecto || "Sin marca";
+  const brandColor = _isVjmBrand
+    ? "#0583FF"
+    : _isMcrBrand
+      ? "#E6484B"
+      : "#64748b";
 
   return (
     <div className="rd-root" style={getContainerStyle(isResizing)}>
@@ -2928,6 +3039,8 @@ export default function Redactor() {
         progress={bulkProgress}
       />
 
+      {/* Cabecera fija: navbar + toolbar como un solo bloque sticky */}
+      <div className="rd-header-stack">
       {/* Navbar */}
       <nav className="rd-navbar">
         <div style={tableStyles.navContent}>
@@ -2950,21 +3063,51 @@ export default function Redactor() {
             </button>
 
             <div>
-              <h1 style={tableStyles.title}>{currentLP.name}</h1>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.625rem",
+                  flexWrap: "wrap",
+                }}
+              >
+                <h1 style={tableStyles.title}>
+                  {currentLP.name || currentLP.title}
+                </h1>
+                <span
+                  style={{
+                    backgroundColor: brandColor,
+                    color: "#ffffff",
+                    fontSize: "0.75rem",
+                    fontWeight: "700",
+                    padding: "0.2rem 0.6rem",
+                    borderRadius: "9999px",
+                    whiteSpace: "nowrap",
+                  }}
+                  title={`Marca: ${brandName}`}
+                >
+                  {brandName}
+                </span>
+              </div>
               <p
                 style={{
                   margin: "0.25rem 0 0 0",
-                  fontSize: "1.2rem",
-                  color: "#000000",
+                  fontSize: "0.95rem",
+                  color: "var(--ink-500)",
                   display: "flex",
                   alignItems: "center",
                   gap: "0.5rem",
+                  flexWrap: "wrap",
                 }}
               >
-                <span>{currentLP.title}</span>
+                {currentLP.name && currentLP.title !== currentLP.name && (
+                  <span>{currentLP.title}</span>
+                )}
                 {lastSaved && (
                   <>
-                    <span>•</span>
+                    {currentLP.name && currentLP.title !== currentLP.name && (
+                      <span>•</span>
+                    )}
                     <span>Guardado: {lastSaved.toLocaleTimeString()}</span>
                   </>
                 )}
@@ -2979,12 +3122,12 @@ export default function Redactor() {
                 style={{
                   backgroundColor:
                     saveStatus === "saved"
-                      ? "#10b981"
+                      ? "var(--positive)"
                       : saveStatus === "error"
-                        ? "#ef4444"
+                        ? "var(--danger)"
                         : saveStatus === "saving"
-                          ? "#6b7280"
-                          : "#3b82f6",
+                          ? "var(--ink-500)"
+                          : "var(--accent)",
                   color: "white",
                   cursor: saveStatus === "saving" ? "not-allowed" : "pointer",
                 }}
@@ -3048,7 +3191,7 @@ export default function Redactor() {
                 className="rd-btn"
                 style={{
                   marginLeft: "0.5rem",
-                  backgroundColor: "#ef4444",
+                  backgroundColor: "var(--danger)",
                   color: "white",
                 }}
                 title="Borrar todo el contenido"
@@ -3074,7 +3217,7 @@ export default function Redactor() {
                 style={{
                   width: "2rem",
                   height: "2rem",
-                  backgroundColor: "#3b82f6",
+                  backgroundColor: "var(--accent)",
                   borderRadius: "50%",
                   display: "flex",
                   alignItems: "center",
@@ -3103,11 +3246,7 @@ export default function Redactor() {
                   {currentUser.name}
                 </p>
                 <p style={{ margin: 0, fontSize: "0.75rem", color: "#64748b" }}>
-                  {isAdminUser && isAdminUser(currentUser.id)
-                    ? "Administrador"
-                    : isEditorUser && isEditorUser(currentUser.id)
-                      ? "Editor"
-                      : "Visualizador"}
+                  {roleLabel(currentUser)}
                 </p>
               </div>
             </div>
@@ -3126,10 +3265,10 @@ export default function Redactor() {
             zIndex: 1000,
             backgroundColor:
               saveStatus === "saved"
-                ? "#10b981"
+                ? "var(--positive)"
                 : saveStatus === "error"
-                  ? "#ef4444"
-                  : "#3b82f6",
+                  ? "var(--danger)"
+                  : "var(--accent)",
             color: "white",
           }}
         >
@@ -3148,7 +3287,9 @@ export default function Redactor() {
       {/* Barra de herramientas */}
       <div className="rd-toolbar">
         <div className="rd-toolbar-buttons">
-          {/* Botón de IA - Solo para columna Español */}
+          {/* ── Grupo: acciones sobre la celda/sección seleccionada ── */}
+          <div className="rd-toolbar-group">
+          {/* Botón de IA por bloque - Solo para columna Español */}
           {(() => {
             if (!selectedCell || editingCell) return null;
 
@@ -3576,7 +3717,196 @@ export default function Redactor() {
                   block.name
                 } (usa título de fila ${block.titleRow + 1})`}
               >
+                <Sparkles size={14} />
                 <span>IA {block.name}</span>
+              </button>
+            );
+          })()}
+
+          {/* Botón Regenerar SECCIÓN - títulos y descripciones (no FAQ ni disclaimers) */}
+          {(() => {
+            if (!selectedCell || editingCell) return null;
+
+            const [row, col] = selectedCell.split("-").map(Number);
+            if (col !== 3) return null; // Solo columna Español
+
+            const block = getBlockFromRow(row);
+            if (!block) return null;
+
+            const seccion = getSeccionForCell(selectedCell, block, tableData);
+            if (!seccion) return null;
+
+            return (
+              <button
+                className="rd-tbtn rd-tbtn-teal"
+                onClick={async (event) => {
+                  if (!selectedCell) return;
+
+                  const MAX_RETRIES = 3;
+                  const button = event.target.closest("button");
+                  const originalHTML = button ? button.innerHTML : "";
+
+                  try {
+                    const tema = currentLP.title;
+                    const currentTemplate = getCurrentTemplate();
+                    // Semilla: para ítems es su H3; para bloque/título es el H2/H1.
+                    // Si está vacío, usamos el tema del LP como hilo conductual.
+                    const seedTitle =
+                      (seccion.seedTitle || "").trim() || (tema || "").trim();
+
+                    if (!seedTitle) {
+                      alert(
+                        "No hay un título de referencia para esta sección. Agrega primero el título del bloque o del ítem.",
+                      );
+                      return;
+                    }
+
+                    const existingContent =
+                      tableData[seccion.descCellKey]?.content || "";
+                    if (existingContent.trim() !== "") {
+                      const confirmReplace = window.confirm(
+                        seccion.isTitle
+                          ? "¿Regenerar este título con una nueva idea?\n\nSe reemplazará el título actual de esta celda."
+                          : "¿Regenerar esta sección con una nueva idea?\n\nSe reemplazará el contenido actual de esta celda. Las demás secciones del bloque no se tocan.",
+                      );
+                      if (!confirmReplace) return;
+                    }
+
+                    button.innerHTML =
+                      '<div class="rd-spinner"></div><span>Regenerando...</span>';
+                    button.disabled = true;
+                    button.style.cursor = "not-allowed";
+
+                    let generatedContent = null;
+                    let lastError = null;
+
+                    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+                      try {
+                        if (attempt > 1) {
+                          button.innerHTML = `<div class="rd-spinner"></div><span>Reintentando... (${attempt}/${MAX_RETRIES})</span>`;
+                        }
+
+                        generatedContent = await apiService.generateSection({
+                          lpId: currentLP.id,
+                          blockNumber: block.number,
+                          blockType: block.type,
+                          itemTitle: seedTitle,
+                          targetField: seccion.field,
+                          cellKey: seccion.descCellKey,
+                          tema: tema,
+                          currentContent: existingContent,
+                          templateInfo: currentTemplate,
+                        });
+
+                        const value =
+                          generatedContent?.structured_content?.[seccion.field];
+                        if (
+                          !generatedContent ||
+                          !generatedContent.structured_content ||
+                          value === undefined ||
+                          String(value).trim() === ""
+                        ) {
+                          throw new Error(
+                            "La IA no generó contenido válido para la sección",
+                          );
+                        }
+
+                        break;
+                      } catch (error) {
+                        lastError = error;
+                        console.error(
+                          `[Regenerar Sección ${attempt}/${MAX_RETRIES}]`,
+                          error,
+                        );
+
+                        if (currentLP?.id) {
+                          apiService
+                            .post("/logs/generation-failure", {
+                              landing_page_id: currentLP.id,
+                              cell_position: seccion.descCellKey,
+                              failure_reason: `Sección intento ${attempt}/${MAX_RETRIES}: ${error.message || "Unknown error"}`,
+                            })
+                            .catch(() => {});
+                        }
+
+                        if (attempt < MAX_RETRIES) {
+                          await new Promise((resolve) =>
+                            setTimeout(resolve, 1000 * attempt),
+                          );
+                        }
+                      }
+                    }
+
+                    if (!generatedContent) {
+                      throw (
+                        lastError ||
+                        new Error("Falló después de todos los reintentos")
+                      );
+                    }
+
+                    const brand = currentTemplate?.proyecto || "mcr";
+                    const rawValue =
+                      generatedContent.structured_content[seccion.field];
+                    // Los títulos no se colorean; los campos IP necesitan el desc
+                    // del bloque como base para el coloreado morado.
+                    let finalValue;
+                    if (seccion.isTitle) {
+                      finalValue = rawValue;
+                    } else {
+                      const baseDesc =
+                        seccion.field === "ip_usa" || seccion.field === "ip_bra"
+                          ? tableData[`${block.descRow}-3`]?.content || ""
+                          : "";
+                      finalValue = colorizeField(
+                        seccion.field,
+                        rawValue,
+                        brand,
+                        baseDesc,
+                      );
+                    }
+
+                    // Aplicar SOLO esta celda; el resto del bloque queda intacto.
+                    let _capturedTableData = null;
+                    setTableData((prev) => {
+                      const updates = {
+                        ...prev,
+                        [seccion.descCellKey]: { content: finalValue },
+                      };
+                      _capturedTableData = updates;
+                      return updates;
+                    });
+
+                    // auto-save silencioso tras regenerar la sección
+                    saveRedactorProgress(
+                      currentLP.id,
+                      _capturedTableData || tableDataRef.current,
+                      annotations,
+                    ).catch(() => {});
+
+                    button.innerHTML = originalHTML;
+                    button.disabled = false;
+                    button.style.cursor = "pointer";
+                  } catch (error) {
+                    console.error("Error regenerando sección:", error);
+                    alert(`Error al regenerar la sección:\n\n${error.message}`);
+
+                    if (button) {
+                      button.innerHTML = originalHTML;
+                      button.disabled = false;
+                      button.style.cursor = "pointer";
+                    }
+                  }
+                }}
+                title={
+                  seccion.isTitle
+                    ? "Regenerar este título con una idea nueva"
+                    : "Regenerar solo esta sección con una idea nueva (no afecta las demás)"
+                }
+              >
+                <RefreshCw size={14} />
+                <span>
+                  {seccion.isTitle ? "Regenerar título" : "Regenerar sección"}
+                </span>
               </button>
             );
           })()}
@@ -3654,48 +3984,7 @@ export default function Redactor() {
             );
           })()}
 
-          {/* Botón para generar todas las filas en español */}
-          <div className="rd-toolbar-sep" />
-          <button
-            className={`rd-tbtn ${isBulkGenerating ? "rd-tbtn-muted" : "rd-tbtn-indigo"}`}
-            onClick={async () => {
-              if (isBulkGenerating) return;
-
-              const confirm = window.confirm(
-                `¿Generar TODO el contenido en español de TODOS los bloques?\n\nEsto procesará todos los bloques de la tabla.\nPuede tomar varios minutos.`,
-              );
-              if (!confirm) return;
-
-              await generateAllRowsSpanish();
-            }}
-            disabled={isBulkGenerating}
-            title="Generar todo el contenido en español (todos los bloques)"
-          >
-            <span>⚡</span>
-            <span>Generar Todo (ES)</span>
-          </button>
-
-          {/* Botón para traducir todas las filas */}
-          <button
-            className={`rd-tbtn ${isBulkGenerating ? "rd-tbtn-muted" : "rd-tbtn-pink"}`}
-            onClick={async () => {
-              if (isBulkGenerating) return;
-
-              const confirm = window.confirm(
-                `¿Traducir TODO el contenido a inglés y portugués?\n\nEsto traducirá el contenido español existente de todos los bloques.\nPuede tomar varios minutos.`,
-              );
-              if (!confirm) return;
-
-              await translateAllRows();
-            }}
-            disabled={isBulkGenerating}
-            title="Traducir todo el contenido a inglés y portugués (todos los bloques)"
-          >
-            <span>🌐</span>
-            <span>Traducir Todo (EN+PT)</span>
-          </button>
-
-          <div className="rd-toolbar-sep" />
+          {/* Botón de anotación (sobre la celda seleccionada) */}
           <button
             className={`rd-tbtn ${selectedCell && !editingCell ? "rd-tbtn-warning" : "rd-tbtn-inactive"}`}
             onClick={() =>
@@ -3717,15 +4006,67 @@ export default function Redactor() {
                 : "Anotar"}
             </span>
           </button>
-
-          <div style={tableStyles.colorSection}>
-            <Palette size={16} />
-            <span style={{ fontSize: "12px", color: "#6b7280" }}>
-              Selecciona texto para colorear
-            </span>
           </div>
+          {/* /Grupo Selección */}
+
+          {/* ── Grupo: acciones masivas (toda la tabla) ── */}
+          <div className="rd-toolbar-group rd-toolbar-group-right">
+          {/* Botón para generar todas las filas en español */}
+          <button
+            className={`rd-tbtn ${isBulkGenerating ? "rd-tbtn-muted" : "rd-tbtn-indigo"}`}
+            onClick={async () => {
+              if (isBulkGenerating) return;
+
+              const confirm = window.confirm(
+                `¿Generar TODO el contenido en español de TODOS los bloques?\n\nEsto procesará todos los bloques de la tabla.\nPuede tomar varios minutos.`,
+              );
+              if (!confirm) return;
+
+              await generateAllRowsSpanish();
+            }}
+            disabled={isBulkGenerating}
+            title="Generar todo el contenido en español (todos los bloques)"
+          >
+            <Zap size={14} />
+            <span>Generar Todo (ES)</span>
+          </button>
+
+          {/* Botón para traducir todas las filas */}
+          <button
+            className={`rd-tbtn ${isBulkGenerating ? "rd-tbtn-muted" : "rd-tbtn-pink"}`}
+            onClick={async () => {
+              if (isBulkGenerating) return;
+
+              const confirm = window.confirm(
+                `¿Traducir TODO el contenido a inglés y portugués?\n\nEsto traducirá el contenido español existente de todos los bloques.\nPuede tomar varios minutos.`,
+              );
+              if (!confirm) return;
+
+              await translateAllRows();
+            }}
+            disabled={isBulkGenerating}
+            title="Traducir todo el contenido a inglés y portugués (todos los bloques)"
+          >
+            <Globe size={14} />
+            <span>Traducir Todo (EN+PT)</span>
+          </button>
+          </div>
+          {/* /Grupo Masivo */}
+
+          {/* ── Grupo: formato ── */}
+          <div className="rd-toolbar-group">
+            <div style={tableStyles.colorSection}>
+              <Palette size={16} />
+              <span style={{ fontSize: "12px", color: "#6b7280" }}>
+                Selecciona texto para colorear
+              </span>
+            </div>
+          </div>
+          {/* /Grupo Formato */}
         </div>
       </div>
+      </div>
+      {/* /Cabecera fija */}
 
       {/* Tabla principal */}
       <div
@@ -3739,23 +4080,45 @@ export default function Redactor() {
             <table style={tableStyles.table} ref={tableRef}>
               <thead>
                 <tr>
-                  <th style={tableStyles.headerCell}></th>
-                  {Array.from({ length: numCols }, (_, col) => (
-                    <th
-                      key={col}
-                      style={{
-                        ...tableStyles.columnHeader,
-                        width: columnWidths[col],
-                        minWidth: columnWidths[col],
-                      }}
-                    >
-                      {getColumnLabel(col)}
-                      <div
-                        style={tableStyles.resizeHandle}
-                        onMouseDown={(e) => handleMouseDown(e, "column", col)}
-                      />
-                    </th>
-                  ))}
+                  <th
+                    style={{
+                      ...tableStyles.headerCell,
+                      position: "sticky",
+                      top: 0,
+                      left: 0,
+                      zIndex: 3,
+                    }}
+                  ></th>
+                  {Array.from({ length: numCols }, (_, col) => {
+                    const isSelCol =
+                      selectedCell &&
+                      Number(selectedCell.split("-")[1]) === col;
+                    return (
+                      <th
+                        key={col}
+                        style={{
+                          ...tableStyles.columnHeader,
+                          width: columnWidths[col],
+                          minWidth: columnWidths[col],
+                          position: "sticky",
+                          top: 0,
+                          zIndex: 2,
+                          ...(isSelCol
+                            ? {
+                                backgroundColor: "var(--accent-100)",
+                                color: "var(--accent-700)",
+                              }
+                            : {}),
+                        }}
+                      >
+                        {getColumnLabel(col)}
+                        <div
+                          style={tableStyles.resizeHandle}
+                          onMouseDown={(e) => handleMouseDown(e, "column", col)}
+                        />
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody>
@@ -3765,6 +4128,16 @@ export default function Redactor() {
                       style={{
                         ...tableStyles.headerCell,
                         height: rowHeights[row],
+                        position: "sticky",
+                        left: 0,
+                        zIndex: 2,
+                        ...(selectedCell &&
+                        Number(selectedCell.split("-")[0]) === row
+                          ? {
+                              backgroundColor: "var(--accent-100)",
+                              color: "var(--accent-700)",
+                            }
+                          : {}),
                       }}
                     >
                       {row + 1}
@@ -3802,10 +4175,10 @@ export default function Redactor() {
                             position: "relative",
                             overflow: "hidden",
                             padding: "0",
-                            border: "1px solid #e5e7eb",
+                            border: "1px solid var(--ink-200)",
                             ...(isSelected && !isEditing
                               ? {
-                                  border: "2px solid #3b82f6",
+                                  border: "2px solid var(--accent)",
                                   zIndex: 1,
                                 }
                               : {}),
@@ -3909,7 +4282,7 @@ export default function Redactor() {
                 .reverse()
                 .join(" ")}
             </span>
-            <span style={{ color: "#6366f1", fontWeight: "500" }}>
+            <span style={{ color: "var(--accent)", fontWeight: "500" }}>
               {(() => {
                 const cellContent = tableData[selectedCell]?.content || "";
                 const plainText = extractPlainText(cellContent);

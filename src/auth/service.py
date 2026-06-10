@@ -11,8 +11,9 @@ from jwt import PyJWTError
 from sqlalchemy.orm import Session
 from src.entities.user import User
 from . import models
+from . import roles
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
-from ..exceptions import AuthenticationError
+from ..exceptions import AuthenticationError, InactiveUserError
 import logging
 
 # You would want to store this in an environment variable or a secret manager
@@ -66,8 +67,9 @@ def register_user(db: Session, register_user_request: models.RegisterUserRequest
             email=register_user_request.email,
             first_name=register_user_request.first_name,
             last_name=register_user_request.last_name,
-            password_hash=get_password_hash(register_user_request.password)
-        )    
+            password_hash=get_password_hash(register_user_request.password),
+            role=roles.DEFAULT_ROLE.value,
+        )
         db.add(create_user_model)
         db.commit()
     except Exception as e:
@@ -85,6 +87,10 @@ def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm, Depen
                                  db: Session) -> models.Token:
     user = authenticate_user(form_data.username, form_data.password, db)
     if not user:
-        raise AuthenticationError()
+        raise AuthenticationError("Correo o contraseña incorrectos.")
+    # Las cuentas desactivadas no pueden iniciar sesión (mensaje distinto al de credenciales).
+    if not getattr(user, "is_active", True):
+        logging.warning(f"Login bloqueado: cuenta desactivada {form_data.username}")
+        raise InactiveUserError()
     token = create_access_token(user.email, user.id, timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     return models.Token(access_token=token, token_type='bearer')

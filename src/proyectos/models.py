@@ -28,6 +28,11 @@ class ProyectoBase(BaseModel):
     description: Optional[str] = None
     estado: EstadoProyecto = EstadoProyecto.DRAFT
     prioridad: PrioridadProyecto = PrioridadProyecto.MEDIUM
+    # Dominio destino de la landing page
+    dominio: Optional[str] = None
+    dominio_url: Optional[str] = None
+    dominio_pais: Optional[str] = None
+    dominio_idiomas: Optional[str] = None
 
 class ProyectoCreate(ProyectoBase):
     assigned_to: Optional[UUID] = None
@@ -40,6 +45,10 @@ class ProyectoUpdate(BaseModel):
     prioridad: Optional[PrioridadProyecto] = None
     assigned_to: Optional[UUID] = None
     template_id: Optional[UUID] = None
+    dominio: Optional[str] = None
+    dominio_url: Optional[str] = None
+    dominio_pais: Optional[str] = None
+    dominio_idiomas: Optional[str] = None
 
 class ProyectoResponse(ProyectoBase):
     id: UUID

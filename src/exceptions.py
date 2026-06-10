@@ -55,6 +55,13 @@ class AuthenticationError(HTTPException):
     def __init__(self, message: str = "Could not validate user"):
         super().__init__(status_code=401, detail=message)
 
+class InactiveUserError(HTTPException):
+    def __init__(self):
+        super().__init__(
+            status_code=403,
+            detail="Tu cuenta está desactivada. Contacta a un administrador para reactivarla.",
+        )
+
 class ProyectoCreationError(HTTPException):
     def __init__(self, error: str):
         super().__init__(status_code=500, detail=f"Failed to create proyecto: {error}")

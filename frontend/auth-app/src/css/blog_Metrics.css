@@ -17,6 +17,8 @@
 
 /* Tarjetas Premium */
 .card-metric-premium {
+  position: relative;
+  overflow: hidden;
   background: #ffffff;
   padding: 24px;
   border-radius: 20px;
@@ -29,10 +31,21 @@
   min-height: 180px; /* Altura mínima para uniformidad */
 }
 
+/* Acento superior de la tarjeta */
+.card-metric-premium::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--accent), #60a5fa);
+}
+
 .card-metric-premium:hover {
   transform: translateY(-5px);
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-  border-color: #3b82f6;
+  box-shadow: var(--shadow-md);
+  border-color: var(--accent);
 }
 
 .metric-header {
@@ -57,11 +70,12 @@
 }
 
 .metric-main-value {
-  font-size: 38px;
+  font-size: 40px;
   font-weight: 800;
-  letter-spacing: -1px;
+  letter-spacing: -1.5px;
   color: #0f172a;
   margin-bottom: 4px;
+  font-variant-numeric: tabular-nums;
 }
 
 .metric-subtitle {
@@ -118,7 +132,7 @@
   padding: 30px;
   border-radius: 24px;
   border: 1px solid #f1f5f9;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--shadow-md);
   margin-top: 20px;
 }
 .chart-header {
@@ -156,7 +170,7 @@
 .legend-dot {
   width: 10px;
   height: 10px;
-  background: #3b82f6;
+  background: var(--accent);
   border-radius: 50%;
 }
 
@@ -204,7 +218,7 @@
 }
 
 .source-badge i {
-  color: #3b82f6;
+  color: var(--accent);
 }
 
 .last-sync {

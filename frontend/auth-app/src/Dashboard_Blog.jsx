@@ -6,7 +6,7 @@ import { useBlogs } from "./hooks/useApi.js";
 import { useUsers, useFilters, useSearch } from "./hooks/useApi.js";
 import apiService from "./services/apiService.js";
 import { useCurrentUser } from "./hooks/useApi.js";
-import { isAdminUser, isEditorUser } from "./utils/roles";
+import { isAdminUser, canCreateBlog, roleLabel } from "./utils/roles";
 
 // -----------------------------------------------------------------------------
 // FUNCIONES AUXILIARES DE VISTA
@@ -75,7 +75,7 @@ function EditBlogModal({ blog, onClose, onSubmit }) {
   };
 
   return (
-    <div className="modal-overlay">
+    <div className="modal-overlay rd-modal">
       <div className="modal-content">
         <h2 className="modal-title">Editar Blog</h2>
 
@@ -267,7 +267,7 @@ const ModalCreacionBlog = ({ onClose, onCreateSuccess }) => {
   const currentConfig = configsPorCategoria[formData.categoria];
 
   return (
-    <div className="modal-backdrop">
+    <div className="modal-backdrop rd-modal">
       <div className="modal-content">
         <div className="modal-header">
           <h2>Generar Idea y Borrador Inicial</h2>
@@ -396,9 +396,9 @@ function AssignModal({ proyecto, users, onClose, onAssign }) {
 
   return (
     <div
-      className="modal-backdrop"
+      className="modal-backdrop rd-modal"
       style={{
-        zIndex: 1000,
+        zIndex: 1100,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -407,19 +407,33 @@ function AssignModal({ proyecto, users, onClose, onAssign }) {
         left: 0,
         right: 0,
         bottom: 0,
-        backgroundColor: "rgba(0,0,0,0.5)",
+        backgroundColor: "rgba(15,23,42,0.55)",
+        backdropFilter: "blur(6px)",
+        padding: "20px",
       }}
     >
       <div
         className="modal-content"
         style={{
           backgroundColor: "white",
-          padding: "2rem",
-          borderRadius: "0.75rem",
+          padding: "1.75rem 2rem 2rem",
+          borderRadius: "1rem",
           minWidth: "400px",
+          maxWidth: "460px",
+          width: "100%",
         }}
       >
-        <h2 style={{ margin: "0 0 1.5rem 0" }}>Asignar Usuario</h2>
+        <h2
+          style={{
+            margin: "0 0 1.25rem 0",
+            fontSize: "1.4rem",
+            fontWeight: 800,
+            letterSpacing: "-0.02em",
+            color: "#0f172a",
+          }}
+        >
+          Asignar Usuario
+        </h2>
 
         <p style={{ marginBottom: "1rem", color: "#64748b" }}>
           {/* Usamos title porque es un Blog */}
@@ -460,13 +474,14 @@ function AssignModal({ proyecto, users, onClose, onAssign }) {
         >
           <button
             onClick={onClose}
-            className="btn-generate"
+            className="btn-cancel"
             style={{
-              padding: "0.5rem 1rem",
-              backgroundColor: "#f63b3b",
-              color: "white",
-              border: "none",
-              borderRadius: "0.375rem",
+              padding: "0.7rem 1.2rem",
+              backgroundColor: "#f1f5f9",
+              color: "#475569",
+              border: "1px solid #e2e8f0",
+              borderRadius: "0.6rem",
+              fontWeight: 600,
               cursor: "pointer",
             }}
           >
@@ -477,12 +492,13 @@ function AssignModal({ proyecto, users, onClose, onAssign }) {
             className="btn-generate"
             disabled={loading}
             style={{
-              padding: "0.5rem 1rem",
-              backgroundColor: "#3b82f6",
+              padding: "0.7rem 1.2rem",
+              backgroundColor: loading ? "#94a3b8" : "#1e5fd6",
               color: "white",
               border: "none",
-              borderRadius: "0.375rem",
-              cursor: "pointer",
+              borderRadius: "0.6rem",
+              fontWeight: 600,
+              cursor: loading ? "not-allowed" : "pointer",
             }}
           >
             {loading ? "Asignando..." : "Asignar"}
@@ -506,7 +522,7 @@ const TableRow = ({
   currentUser,
 }) => {
   // 1. LÓGICA DE PERMISOS
-  const isIdAdmin = isAdminUser(currentUser?.id);
+  const isIdAdmin = isAdminUser(currentUser);
   const isAssignedToMe = blog.assigned_to === currentUser?.id;
 
   // Obtenemos el nombre del usuario para mostrarlo en la celda
@@ -769,46 +785,100 @@ export const DashboardBlog = () => {
   }, [blogs]);
 
   return (
-    <div style={{ background: "#e6e6e6", minHeight: "100vh" }}>
+    <div style={{ background: "#f5f7fa", minHeight: "100dvh" }}>
       <header
-        className="navbar"
         style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          padding: "0.75rem 2rem",
+          padding: "0.9rem 2rem",
           backgroundColor: "#ffffff",
+          backgroundImage:
+            "radial-gradient(640px 220px at 0% -60%, rgba(30,95,214,0.08), transparent 70%)",
+          borderTop: "3px solid #1e5fd6",
           borderBottom: "1px solid #e2e8f0",
           boxShadow:
-            "0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)",
+            "0 1px 2px rgba(15,23,42,0.04), 0 4px 16px -10px rgba(15,23,42,0.18)",
           position: "sticky",
           top: 0,
           zIndex: 100,
         }}
       >
-        {/* Sección Izquierda: Título */}
-        <div style={{ display: "flex", flexDirection: "column" }}>
-          <h1
+        {/* Contenedor centrado, alineado con <main className="container"> (max-width 1440) */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: "1rem",
+            flexWrap: "wrap",
+            maxWidth: "1440px",
+            margin: "0 auto",
+          }}
+        >
+          {/* Sección Izquierda: Identidad + Título */}
+          <div style={{ display: "flex", alignItems: "center", gap: "1.1rem" }}>
+          {/* Insignia de sección */}
+          <div
             style={{
-              margin: 0,
-              fontSize: "1.80rem",
-              fontWeight: "800",
-              color: "#0f172a",
-              letterSpacing: "-0.025em",
+              width: "3.4rem",
+              height: "3.4rem",
+              minWidth: "3.4rem",
+              borderRadius: "1rem",
+              backgroundColor: "#1e5fd6",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#ffffff",
+              boxShadow: "0 10px 22px -10px rgba(30,95,214,0.8)",
             }}
           >
-            Dashboard <span style={{ color: "#3b82f6" }}>Blogs</span>
-          </h1>
-          <p
-            style={{
-              margin: 0,
-              fontSize: "1.00rem",
-              color: "#64748b",
-              fontWeight: "500",
-            }}
-          >
-            Sistema de gestión de contenido
-          </p>
+            <i className="uil uil-newspaper" style={{ fontSize: "1.6rem" }}></i>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            {/* Breadcrumb — vuelta a Inicio */}
+            <nav
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "0.25rem",
+                fontSize: "0.78rem",
+                color: "#94a3b8",
+                marginBottom: "0.25rem",
+              }}
+            >
+              <span
+                onClick={() => navigate("/home")}
+                style={{ cursor: "pointer", fontWeight: 500, transition: "color 0.2s" }}
+                onMouseOver={(e) => (e.currentTarget.style.color = "#1e5fd6")}
+                onMouseOut={(e) => (e.currentTarget.style.color = "#94a3b8")}
+              >
+                Inicio
+              </span>
+              <i className="uil uil-angle-right" style={{ fontSize: "1rem" }}></i>
+              <span style={{ color: "#64748b", fontWeight: 600 }}>Blogs</span>
+            </nav>
+            <h1
+              style={{
+                margin: 0,
+                fontSize: "1.7rem",
+                fontWeight: "800",
+                color: "#0f172a",
+                letterSpacing: "-0.025em",
+                lineHeight: 1.1,
+              }}
+            >
+              Dashboard <span style={{ color: "#1e5fd6" }}>Blogs</span>
+            </h1>
+            <p
+              style={{
+                margin: "0.25rem 0 0 0",
+                fontSize: "0.9rem",
+                color: "#64748b",
+                fontWeight: "500",
+              }}
+            >
+              Sistema de gestión de contenido
+            </p>
+          </div>
         </div>
 
         {/* Sección Derecha: Nav y Usuario */}
@@ -833,11 +903,11 @@ export const DashboardBlog = () => {
               }}
               // Efectos dinámicos con JS para el hover
               onMouseOver={(e) => {
-                e.currentTarget.style.backgroundColor = "#3b82f6";
+                e.currentTarget.style.backgroundColor = "#1e5fd6";
                 e.currentTarget.style.color = "#ffffff";
-                e.currentTarget.style.borderColor = "#3b82f6";
+                e.currentTarget.style.borderColor = "#1e5fd6";
                 e.currentTarget.style.boxShadow =
-                  "0 0 15px rgba(59, 130, 246, 0.5)"; // Efecto de iluminación
+                  "0 0 15px rgba(30, 95, 214, 0.45)"; // Efecto de iluminación
                 e.currentTarget.style.transform = "translateY(-1px)";
               }}
               onMouseOut={(e) => {
@@ -860,7 +930,7 @@ export const DashboardBlog = () => {
               style={{
                 textDecoration: "none",
                 fontSize: "0.85rem",
-                color: "#66a175",
+                color: "#059669",
                 fontWeight: "700",
                 padding: "0.6rem 1.2rem",
                 borderRadius: "0.75rem",
@@ -870,22 +940,23 @@ export const DashboardBlog = () => {
                 alignItems: "center",
                 gap: "0.6rem",
                 transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-                boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+                boxShadow: "0 1px 2px rgba(15,23,42,0.05)",
               }}
-              // Efectos dinámicos con JS para el hover
+              // Hover coherente: verde sólido con glow verde tintado
               onMouseOver={(e) => {
-                e.currentTarget.style.backgroundColor = "#3fb21f";
+                e.currentTarget.style.backgroundColor = "#10b981";
                 e.currentTarget.style.color = "#ffffff";
-                e.currentTarget.style.borderColor = "#3bf64e";
+                e.currentTarget.style.borderColor = "#10b981";
                 e.currentTarget.style.boxShadow =
-                  "0 0 15px rgba(59, 130, 246, 0.5)"; // Efecto de iluminación
+                  "0 0 15px rgba(16, 185, 129, 0.45)";
                 e.currentTarget.style.transform = "translateY(-1px)";
               }}
               onMouseOut={(e) => {
                 e.currentTarget.style.backgroundColor = "#f8fafc";
-                e.currentTarget.style.color = "#475569";
+                e.currentTarget.style.color = "#059669";
                 e.currentTarget.style.borderColor = "#e2e8f0";
-                e.currentTarget.style.boxShadow = "0 1px 2px rgba(0,0,0,0.05)";
+                e.currentTarget.style.boxShadow =
+                  "0 1px 2px rgba(15,23,42,0.05)";
                 e.currentTarget.style.transform = "translateY(0)";
               }}
             >
@@ -918,8 +989,7 @@ export const DashboardBlog = () => {
                 style={{
                   width: "2.5rem",
                   height: "2.5rem",
-                  background:
-                    "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)",
+                  background: "#1e5fd6",
                   borderRadius: "50%",
                   display: "flex",
                   alignItems: "center",
@@ -927,7 +997,7 @@ export const DashboardBlog = () => {
                   color: "white",
                   fontSize: "0.9rem",
                   fontWeight: "700",
-                  boxShadow: "0 2px 4px rgba(37, 99, 235, 0.2)",
+                  boxShadow: "0 2px 6px rgba(30, 95, 214, 0.3)",
                   border: "2px solid #fff",
                 }}
               >
@@ -959,15 +1029,12 @@ export const DashboardBlog = () => {
                     marginTop: "2px",
                   }}
                 >
-                  {isAdminUser(currentUser.id)
-                    ? "Administrador"
-                    : isEditorUser(currentUser.id)
-                      ? "Editor"
-                      : "Redactor"}
+                  {roleLabel(currentUser)}
                 </span>
               </div>
             </div>
           )}
+          </div>
         </div>
       </header>
 
@@ -1126,7 +1193,7 @@ const BlogsTable = ({
                 <i className="uil uil-refresh"></i>
               </button>
             )}
-            {isAdminUser(currentUser?.id) && (
+            {canCreateBlog(currentUser) && (
               <button
                 className="btn-create-new"
                 onClick={() => setIsModalOpen(true)}

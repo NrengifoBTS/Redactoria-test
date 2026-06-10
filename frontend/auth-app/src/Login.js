@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useApp } from './context/AppContext'; 
+import { useApp } from './context/AppContext';
+import { User, Lock, AlertTriangle } from 'lucide-react';
 import './login.css';
 
 function Login() {
@@ -53,7 +54,7 @@ function Login() {
           {/* Header */}
           <div className="login-header">
             <div className="login-avatar">
-              <span>👤</span>
+              <User strokeWidth={1.75} />
             </div>
             <h1 className="login-title">Login</h1>
             <p className="login-subtitle">Sign in to your account</p>
@@ -65,7 +66,9 @@ function Login() {
             <div className="form-group">
               <label className="form-label">Username</label>
               <div className="input-wrapper">
-                <span className="input-icon">👤</span>
+                <span className="input-icon">
+                  <User />
+                </span>
                 <input
                   type="text"
                   value={username}
@@ -80,7 +83,9 @@ function Login() {
             <div className="form-group">
               <label className="form-label">Password</label>
               <div className="input-wrapper">
-                <span className="input-icon">🔒</span>
+                <span className="input-icon">
+                  <Lock />
+                </span>
                 <input
                   type="password"
                   value={password}
@@ -94,7 +99,9 @@ function Login() {
             {/* Mensaje de error */}
             {error && (
               <div className="error-message">
-                <span className="error-icon">⚠️</span>
+                <span className="error-icon">
+                  <AlertTriangle />
+                </span>
                 <p className="error-text">{error}</p>
               </div>
             )}

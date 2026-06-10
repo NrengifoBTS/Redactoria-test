@@ -1,18 +1,46 @@
-export const ADMIN_USER_IDS = [
-  "65cd97a4-c3b9-4bfd-b014-55457ae847e3",
-  "f49cda9b-2138-435e-a497-fda85be87e63",
-  "c7c17838-074d-44fa-9248-8dc87c15edd5",
-  "152c46be-e2f4-48da-86b1-592af570624a",
-  "b43f1d04-f339-4cf9-8e4e-4f127f12af5a",
-  "2fd1e540-40be-42cf-9d2b-693b0d3132af",
-  "4007b1aa-30a9-4167-8535-639180f8fbc4",
-];
+// Helpers de rol. La fuente de verdad es `user.role` que viene de /users/me.
+// Roles posibles: "master" | "admin" | "editor" | "redactor".
+// Jerarquía: master > admin > editor > redactor.
+//
+// IMPORTANTE: estas funciones reciben el OBJETO usuario (currentUser), no el id.
 
-export const EDITOR_USER_IDS = [
-  "65cd97a4-c3b9-4bfd-b014-55457ae847e3",
-  "a1116359-0fd7-43b4-b4eb-231bc2a14a21",
-  "4e7a5222-8bd5-45c5-bdcd-e4dc1dbfe27d",
-];
+export const ROLES = {
+  MASTER: "master",
+  ADMIN: "admin",
+  EDITOR: "editor",
+  REDACTOR: "redactor",
+};
 
-export const isAdminUser = (userId) => ADMIN_USER_IDS.includes(userId);
-export const isEditorUser = (userId) => EDITOR_USER_IDS.includes(userId);
+export const getRole = (user) => user?.role || ROLES.REDACTOR;
+
+export const isMaster = (user) => getRole(user) === ROLES.MASTER;
+
+// admin o master (master hereda todas las capacidades de admin).
+export const isAdminUser = (user) =>
+  getRole(user) === ROLES.ADMIN || isMaster(user);
+
+export const isEditorUser = (user) => getRole(user) === ROLES.EDITOR;
+
+// Supervisor = editor, admin o master (pueden ver/editar contenido de otros y crear blogs).
+export const isSupervisor = (user) => isAdminUser(user) || isEditorUser(user);
+
+// Capacidades nombradas (espejan la matriz de permisos del backend).
+export const canCreateLandingPage = (user) => isAdminUser(user);
+export const canCreateBlog = (user) => isSupervisor(user);
+export const canViewAnalytics = (user) => isAdminUser(user);
+// Solo master gestiona usuarios.
+export const canManageUsers = (user) => isMaster(user);
+
+// Etiqueta legible del rol para mostrar en la UI.
+export const roleLabel = (user) => {
+  switch (getRole(user)) {
+    case ROLES.MASTER:
+      return "Master";
+    case ROLES.ADMIN:
+      return "Administrador";
+    case ROLES.EDITOR:
+      return "Editor";
+    default:
+      return "Redactor";
+  }
+};

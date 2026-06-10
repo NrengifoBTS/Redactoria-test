@@ -8,9 +8,9 @@
 }
 
 body {
-  font-family: Arial, sans-serif;
+  font-family: var(--font-sans);
   background: #e6e6e6;
-  color: #000000;
+  color: var(--ink-900);
   line-height: 1.5;
 }
 
@@ -174,7 +174,7 @@ body {
 
 .btn-mode-toggle:hover {
   background: #e2e8f0;
-  color: #007bff;
+  color: #1e5fd6;
 }
 
 /* Ajuste del botón cuando el Modo Oscuro está activo */
@@ -525,40 +525,112 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.75rem 2rem;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.9rem 2rem;
   position: sticky;
   top: 0;
   z-index: 100;
+  border-top: 3px solid var(--accent);
   border-bottom: 1px solid #e2e8f0;
   box-shadow:
-    0 4px 6px -1px rgba(0, 0, 0, 0.05),
-    0 2px 4px -1px rgba(0, 0, 0, 0.03);
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 4px 16px -10px rgba(15, 23, 42, 0.18);
 
-  /* FONDO CON IMAGEN Y CAPA BLANCA */
+  /* Fondo blanco con wash radial sutil del acento */
   background-color: #ffffff;
+  background-image: radial-gradient(
+    640px 220px at 0% -60%,
+    rgba(30, 95, 214, 0.08),
+    transparent 70%
+  );
 }
 
 /* Títulos */
 .header-brand {
   display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 1.1rem;
+}
+
+/* Insignia de sección */
+.header-badge {
+  width: 3.4rem;
+  height: 3.4rem;
+  min-width: 3.4rem;
+  border-radius: 1rem;
+  background-color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  box-shadow: 0 10px 22px -10px rgba(30, 95, 214, 0.8);
+}
+
+.header-badge i {
+  font-size: 1.6rem;
+}
+
+.header-brand-text {
+  display: flex;
   flex-direction: column;
+}
+
+/* Breadcrumb — navegación de vuelta */
+.header-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.78rem;
+  color: #94a3b8;
+  margin-bottom: 0.25rem;
+}
+
+.header-breadcrumb a {
+  color: #94a3b8;
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.2s var(--ease);
+}
+
+.header-breadcrumb a:hover {
+  color: var(--accent);
+}
+
+.header-breadcrumb span {
+  color: #64748b;
+  font-weight: 600;
+}
+
+.dark-mode .header-breadcrumb a {
+  color: #64748b;
+}
+
+.dark-mode .header-breadcrumb a:hover {
+  color: #60a5fa;
+}
+
+.dark-mode .header-breadcrumb span {
+  color: #94a3b8;
 }
 
 .header-brand h1 {
   margin: 0;
-  font-size: 1.8rem;
+  font-size: 1.7rem;
   font-weight: 800;
   color: #0f172a;
   letter-spacing: -0.025em;
+  line-height: 1.1;
 }
 
 .header-brand h1 span {
-  color: #3b82f6;
+  color: var(--accent);
 }
 
 .header-brand p {
-  margin: 0;
-  font-size: 1rem;
+  margin: 0.25rem 0 0 0;
+  font-size: 0.9rem;
   color: #64748b;
   font-weight: 500;
 }
@@ -591,10 +663,10 @@ body {
 }
 
 .nav-link-home:hover {
-  background-color: #3b82f6;
+  background-color: #1e5fd6;
   color: #ffffff !important;
-  border-color: #3b82f6;
-  box-shadow: 0 0 15px rgba(59, 130, 246, 0.4);
+  border-color: #1e5fd6;
+  box-shadow: 0 0 15px rgba(30, 95, 214, 0.4);
   transform: translateY(-1px);
 }
 
@@ -626,7 +698,7 @@ body {
 .user-avatar {
   width: 2.5rem;
   height: 2.5rem;
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  background: #1e5fd6;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -652,7 +724,7 @@ body {
 .user-role {
   font-size: 0.7rem;
   font-weight: 600;
-  color: #2b76ef;
+  color: var(--accent);
   text-transform: uppercase;
   letter-spacing: 0.025em;
 }
@@ -680,9 +752,9 @@ input[type="number"]:focus,
 textarea:focus,
 select:focus,
 .auto-expand:focus {
-  border-color: #00eba7;
+  border-color: var(--accent);
   outline: none;
-  box-shadow: 0 0 8px rgba(0, 235, 167, 0.4);
+  box-shadow: 0 0 0 3px rgba(30, 95, 214, 0.15);
 }
 
 /* Selects de sistema (Estilos específicos) */
@@ -775,12 +847,12 @@ select {
 .btn-generate,
 .btn-generate-image,
 .navbar .btn {
-  background: #007bff; /* Azul Corporativo */
+  background: #1e5fd6; /* Azul Corporativo */
   color: #fff;
 }
 
 .btn-generate {
-  background: #007bff; /* Azul Corporativo */
+  background: #1e5fd6; /* Azul Corporativo */
   color: #fff;
   width: 100%;
 }
@@ -788,7 +860,7 @@ select {
 .btn-generate:hover,
 .btn-generate-image:hover,
 .navbar .btn:hover {
-  background: #0056b3; /* Azul más oscuro en hover */
+  background: #1a52ba; /* Azul más oscuro en hover */
 }
 
 /* Botón Regenerar - Morado Limpio */
@@ -901,11 +973,11 @@ mark.ia-spell-error {
 
 /* Botón H2: Azul Profesional */
 .btn-add-h2 {
-  background-color: #007bff;
+  background-color: #1e5fd6;
   color: #ffffff;
 }
 .btn-add-h2:hover:not(:disabled) {
-  background-color: #0056b3;
+  background-color: #1a52ba;
 }
 
 /* Botón H3: Verde Suave */
@@ -1006,7 +1078,8 @@ mark.ia-spell-error {
   padding: 40px;
   background: #ffffff;
   border-radius: 16px;
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.08);
+  border: 1px solid #eef2f7;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 12px 28px -14px rgba(15, 23, 42, 0.14);
   box-sizing: border-box;
   transition:
     transform 0.3s ease,
@@ -1033,7 +1106,9 @@ mark.ia-spell-error {
 }
 .preconfig h2 {
   margin-bottom: 20px;
-  color: #0583ff;
+  color: var(--ink-900);
+  font-weight: 800;
+  letter-spacing: -0.02em;
 }
 
 /* ==========================================================
@@ -1186,11 +1261,24 @@ mark.ia-spell-error {
 
 /* La tarjeta contenedora principal */
 .info-card.analysis-result {
+  position: relative;
+  overflow: hidden;
   background-color: #ffffff;
   padding: 30px;
-  border-radius: 12px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
-  border: 1px solid #eef2f6;
+  border-radius: 16px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 12px 28px -14px rgba(15, 23, 42, 0.14);
+  border: 1px solid #eef2f7;
+}
+
+/* Franja de acento superior */
+.info-card.analysis-result::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--accent), #60a5fa);
 }
 
 .project-display-title {
@@ -1288,12 +1376,19 @@ mark.ia-spell-error {
    ========================================================== */
 
 .analysis-title {
-  display: block;
-  font-weight: bold;
-  margin-bottom: 8px;
-  border-bottom: 2px solid #000f96;
-  padding-bottom: 3px;
-  font-size: 1.1em;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin-bottom: 16px;
+  padding-left: 12px;
+  padding-bottom: 0;
+  border-bottom: none;
+  border-left: 4px solid var(--accent);
+  line-height: 1.2;
+  font-size: 1.15rem;
+  color: var(--ink-900);
 }
 
 .analysis-content {
@@ -1307,7 +1402,7 @@ mark.ia-spell-error {
 .keyword-tag {
   display: inline-block;
   background-color: #e9f5ff;
-  color: #007bff;
+  color: #1e5fd6;
   border: 1px solid #b3d7ff;
   padding: 4px 8px;
   margin-right: 5px;
@@ -1351,7 +1446,7 @@ mark.ia-spell-error {
 /* Estilo para los encabezados H2 (Nivel principal) */
 .structure-item-h2 {
   background-color: #f7f9fb; /* Ligeramente diferente para H2 */
-  border-left: 5px solid #007bff; /* Barra azul de acento a la izquierda */
+  border-left: 5px solid #1e5fd6; /* Barra azul de acento a la izquierda */
 }
 /* Estilo para los encabezados H3 (Nivel anidado) */
 .structure-item-h3 {
@@ -1373,7 +1468,7 @@ mark.ia-spell-error {
   margin-right: 8px;
 }
 .structure-icon-h2 {
-  color: #007bff; /* Azul de acento */
+  color: #1e5fd6; /* Azul de acento */
 }
 .structure-icon-h3 {
   color: #6c757d; /* Gris */
@@ -1553,7 +1648,7 @@ mark.ia-spell-error {
   background-color: #dc3545;
 }
 .toast-info {
-  background-color: #007bff;
+  background-color: #1e5fd6;
 }
 .toast-warning {
   background-color: #ffc107;
@@ -1876,7 +1971,7 @@ mark.ia-spell-error {
 .user-avatar {
   width: 2.2rem;
   height: 2.2rem;
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  background: #1e5fd6;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -1904,7 +1999,7 @@ mark.ia-spell-error {
 .user-role {
   font-size: 0.65rem;
   font-weight: 600;
-  color: #2b76ef;
+  color: var(--accent);
   text-transform: uppercase;
   letter-spacing: 0.025em;
   margin-top: 2px;
@@ -2307,7 +2402,7 @@ ESTRUCTURA EDITABLE
 }
 
 .preview-content-label {
-  color: #007bff;
+  color: #1e5fd6;
   font-size: 0.75rem;
   display: block;
   margin-bottom: 4px;

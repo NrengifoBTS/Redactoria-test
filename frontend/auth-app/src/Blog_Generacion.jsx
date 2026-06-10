@@ -10,7 +10,7 @@ import "@iconscout/unicons/css/line.css";
 import apiService from "./services/apiService";
 import "./css/blog_Generacion.css";
 import { useCurrentUser } from "./hooks/useApi.js";
-import { isAdminUser, isEditorUser } from "./utils/roles";
+import { roleLabel } from "./utils/roles";
 
 // --- IMPORTACIONES TIPTAP ---
 import { useEditor, EditorContent } from "@tiptap/react";
@@ -3393,12 +3393,24 @@ const GeneracionBlog = () => {
       >
         {/* Header */}
         <header className="navbar-custom">
-          {/* Sección Izquierda: Título */}
+          {/* Sección Izquierda: Identidad + Título */}
           <div className="header-brand">
-            <h1>
-              Generación <span>Blogs</span>
-            </h1>
-            <p>Sistema de gestión de contenido</p>
+            <div className="header-badge">
+              <i className="uil uil-file-edit-alt"></i>
+            </div>
+            <div className="header-brand-text">
+              <nav className="header-breadcrumb">
+                <a href="/home">Inicio</a>
+                <i className="uil uil-angle-right" style={{ fontSize: "1rem" }}></i>
+                <a href="/dashboard_blog">Blogs</a>
+                <i className="uil uil-angle-right" style={{ fontSize: "1rem" }}></i>
+                <span>Generación</span>
+              </nav>
+              <h1>
+                Generación <span>Blogs</span>
+              </h1>
+              <p>Sistema de gestión de contenido</p>
+            </div>
           </div>
 
           {/* Sección Derecha: Nav y Usuario */}
@@ -3449,11 +3461,7 @@ const GeneracionBlog = () => {
                     {currentUser.name || currentUser.first_name}
                   </span>
                   <span className="user-role">
-                    {isAdminUser(currentUser.id)
-                      ? "Administrador"
-                      : isEditorUser(currentUser.id)
-                        ? "Editor"
-                        : "Redactor"}
+                    {roleLabel(currentUser)}
                   </span>
                 </div>
               </div>
@@ -3474,7 +3482,7 @@ const GeneracionBlog = () => {
               marginBottom: "20px",
             }}
           >
-            <h2 style={{ color: "#007bff", margin: 0, fontSize: "1.2rem" }}>
+            <h2 style={{ color: "#1e5fd6", margin: 0, fontSize: "1.2rem" }}>
               Fuentes de Referencia
             </h2>
 

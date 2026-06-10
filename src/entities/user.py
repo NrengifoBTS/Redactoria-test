@@ -1,5 +1,5 @@
 #redactoria/src/entities/user.py
-from sqlalchemy import Column, String
+from sqlalchemy import Column, String, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 import uuid
@@ -13,6 +13,12 @@ class User(Base):
     first_name = Column(String, nullable=False)
     last_name = Column(String, nullable=False)
     password_hash = Column(String, nullable=False)
+
+    # Rol del usuario: 'admin' | 'editor' | 'redactor'. Fuente de verdad de permisos.
+    role = Column(String(20), nullable=False, server_default="redactor", default="redactor")
+
+    # Soft-delete: los usuarios no se borran, se desactivan. Inactivo = no puede iniciar sesión.
+    is_active = Column(Boolean, nullable=False, server_default="true", default=True)
 
     # Microsoft Teams integration fields
     teams_user_id = Column(String(255), nullable=True, index=True)

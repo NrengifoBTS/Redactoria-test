@@ -87,6 +87,12 @@ class IAService:
         text = text.replace('&lt;', '<')
         text = text.replace('&gt;', '>')
         text = text.replace('&quot;', '"')
+
+        # Normalizar guiones largos a guion corto (el LLM a veces los genera
+        # pese a la restricción en el prompt)
+        text = text.replace('—', '-')  # em-dash —
+        text = text.replace('–', '-')  # en-dash –
+        text = text.replace('−', '-')  # signo menos −
         
         # Limpiar espacios múltiples (preservar saltos de línea)
         text = re.sub(r'[^\S\n]+', ' ', text)
@@ -737,6 +743,178 @@ class IAService:
             return models.IAContentResponse(
                 generatedContent={
                     "structured_content": {"desc": f"Error crítico: {str(e)[:100]}"},
+                    "frontend_ready": {"has_think": False, "available_fields": [], "field_count": 0, "content_preview": {}},
+                    "error": str(e)
+                },
+                blockName=f"Bloque {request.blockNumber}",
+                cellKey=request.cellKey
+            )
+
+    @staticmethod
+    def generate_section_content(
+        current_user: TokenData,
+        db: Session,
+        landing_page_id: UUID,
+        request: models.IAContentRequest
+    ) -> models.IAContentResponse:
+        """
+        Regenera UNA sola sección (título o descripción) de un bloque con una idea
+        nueva, devolviendo un structured_content con SOLO el campo destino
+        (target_field). Hay dos caminos:
+
+        1) Ítem individual (desc_N en car_rental/fleetcarrusel/deals/advices/
+           fav_city): llama al generador por-ítem con UNA sola entrada (rápido).
+        2) Campo de bloque (títulos H1/H2, desc, desc_h2/h3, ip_usa/ip_bra, etc.):
+           regenera el header del bloque (una llamada al LLM) y extrae solo ese campo.
+
+        FAQ y disclaimers quedan fuera (el frontend no ofrece el botón ahí).
+        """
+        try:
+            # Verificar acceso
+            landing_page = lp_service.get_landing_page_by_id(current_user, db, landing_page_id)
+
+            # Limpiar el título de la sección (es el "hilo conductual": tipo de auto / ciudad)
+            import re
+            titulo_original = request.tit or ""
+            titulo_limpio = re.sub(r'<[^>]+>', '', titulo_original)
+            titulo_limpio = titulo_limpio.replace('&nbsp;', ' ').replace('&amp;', '&').replace('&quot;', '"').strip()
+
+            nuevo_tema = request.tema or "Tema por defecto"
+            block_type = IAService.normalize_block_type(request.blockType)
+            target_field = request.target_field or "desc_1"
+
+            if not titulo_limpio:
+                raise ValueError("Falta el título de la sección a regenerar")
+
+            logging.info(
+                f"Regenerando SECCIÓN '{block_type}' campo='{target_field}' "
+                f"título='{titulo_limpio}' para LP {landing_page_id}"
+            )
+
+            brand = (request.brand or "mcr").lower()
+            generator = ViajemosGenerator(brand=brand, fast_mode=True) if brand in ("vjm", "viajemos") else ContentGenerator(brand=brand, fast_mode=True)
+
+            _ITEM_BLOCKS = (
+                "car_rental", "fleetcarrusel", "deals",
+                "advicestipocarrusel", "fav_city", "locationscarrusel",
+            )
+            is_item_desc = bool(re.match(r"^desc_\d+$", target_field)) and block_type in _ITEM_BLOCKS
+
+            if is_item_desc:
+                # ── Camino 1: regenerar UN ítem (idea nueva, sin tocar el resto) ──
+                if block_type in ("car_rental", "fleetcarrusel", "deals"):
+                    raw_content = generator.generate_car_type([titulo_limpio], nuevo_tema)
+                    parse_type = "car_rental_additional"
+                elif block_type == "advicestipocarrusel":
+                    raw_content = generator.generate_advice_type([titulo_limpio], nuevo_tema)
+                    parse_type = "advicestipocarrusel_additional"
+                else:  # fav_city / locationscarrusel
+                    raw_content = generator.generate_fav_city_respuesta(nuevo_tema, [titulo_limpio])
+                    parse_type = "fav_city_additional"
+
+                processed = IAService.process_llm_response(raw_content or "", parse_type)
+                section_fields = processed.get("structured_content", {}) or {}
+
+                # Tomar la descripción del único ítem (desc_1) y mapearla al campo destino.
+                generated_value = section_fields.get("desc_1")
+                if not generated_value:
+                    for key, value in section_fields.items():
+                        if key.startswith("desc_") and value:
+                            generated_value = value
+                            break
+                if not generated_value:
+                    generated_value = section_fields.get("desc") or ""
+            else:
+                # ── Camino 2: regenerar el header del bloque y extraer SOLO el campo ──
+                if block_type == "quicksearch":
+                    raw_content = generator.generate_quicksearch(titulo_limpio, nuevo_tema)
+                elif block_type == "fleet":
+                    raw_content = generator.generate_fleet(titulo_limpio, nuevo_tema)
+                elif block_type == "deals":
+                    raw_content = generator.generate_deals(titulo_limpio, nuevo_tema)
+                elif block_type == "agencies":
+                    raw_content = generator.generate_agencies(titulo_limpio, nuevo_tema)
+                elif block_type == "reviews":
+                    raw_content = generator.generate_reviews(titulo_limpio, nuevo_tema)
+                elif block_type == "rentcompanies":
+                    raw_content = generator.generate_rentcompanies(titulo_limpio, nuevo_tema)
+                elif block_type == "bloquehistoria":
+                    raw_content = generator.generate_bloquehistoria(titulo_limpio, nuevo_tema)
+                elif block_type == "rentacar":
+                    raw_content = generator.generate_rentacar(titulo_limpio, nuevo_tema)
+                elif block_type in ("car_rental", "fleetcarrusel"):
+                    raw_content = generator.generate_car_rental(titulo_limpio, nuevo_tema)
+                elif block_type in ("fav_city", "locationscarrusel"):
+                    raw_content = generator.generate_fav_city(titulo_limpio, nuevo_tema)
+                elif block_type == "advicestipocarrusel":
+                    raw_content = generator.generate_advicestipocarrusel(titulo_limpio, nuevo_tema)
+                else:
+                    raise ValueError(
+                        f"La regeneración por sección no está disponible para el bloque '{block_type}'"
+                    )
+
+                processed = IAService.process_llm_response(raw_content or "", block_type)
+                section_fields = processed.get("structured_content", {}) or {}
+
+                generated_value = section_fields.get(target_field)
+                # Fallbacks de alias frecuentes entre generador y mapeo de celdas.
+                if not generated_value and target_field in ("titulo", "tit"):
+                    generated_value = section_fields.get("titulo") or section_fields.get("tit")
+                if not generated_value and target_field in ("desc", "desc_h2"):
+                    generated_value = section_fields.get("desc") or section_fields.get("desc_h2")
+                if not generated_value:
+                    generated_value = ""
+
+            structured_content = {target_field: generated_value}
+            structured_content = IAService._enforce_primary_keyword_policy(structured_content)
+
+            preview_val = structured_content.get(target_field, "") or ""
+            processed_response = {
+                "think": processed.get("think", ""),
+                "raw_content": raw_content or "",
+                "processed_fields": processed.get("processed_fields", {}),
+                "structured_content": structured_content,
+                "block_type": block_type,
+                "frontend_ready": {
+                    "has_think": bool(processed.get("think")),
+                    "available_fields": [target_field],
+                    "field_count": 1,
+                    "content_preview": {
+                        target_field: preview_val[:100] + "..." if len(preview_val) > 100 else preview_val
+                    },
+                },
+            }
+
+            # Meta de salud del LLM (igual que generate_block_content)
+            llm_health = generator.llm.health()
+            processed_response["llm_status"] = {
+                "ok": llm_health.get("ok", False),
+                "last_call_success": llm_health.get("last_call_success", False),
+                "reachable_url": llm_health.get("reachable_url", ""),
+                "last_error": llm_health.get("last_error", ""),
+                "fallback_likely": not llm_health.get("ok", False) or not llm_health.get("last_call_success", False),
+                "message": (
+                    "Generado con LLM activo"
+                    if llm_health.get("ok", False) and llm_health.get("last_call_success", False)
+                    else "LLM no disponible: se usó contenido de respaldo"
+                ),
+            }
+
+            block_names = {1: "Bloque 1", 2: "Bloque 2", 3: "Bloque 3", 4: "Bloque 4", 5: "Bloque 5", 6: "Bloque 6", 7: "Bloque 7"}
+            block_name = block_names.get(request.blockNumber, f"Bloque {request.blockNumber}")
+
+            return models.IAContentResponse(
+                generatedContent=processed_response,
+                blockName=block_name,
+                cellKey=request.cellKey
+            )
+
+        except Exception as e:
+            logging.error(f"Error regenerando sección: {str(e)}")
+            logging.error(f"Traceback: {traceback.format_exc()}")
+            return models.IAContentResponse(
+                generatedContent={
+                    "structured_content": {(request.target_field or "desc_1"): f"Error: {str(e)[:100]}"},
                     "frontend_ready": {"has_think": False, "available_fields": [], "field_count": 0, "content_preview": {}},
                     "error": str(e)
                 },

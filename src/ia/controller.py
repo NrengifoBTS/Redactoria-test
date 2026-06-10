@@ -201,6 +201,39 @@ def generate_ia_block_6(
 
     return response
 
+@router.post("/{landing_page_id}/section", response_model=models.IAContentResponse)
+def regenerate_ia_section(
+    db: DbSession,
+    landing_page_id: UUID,
+    request: models.IAContentRequest,
+    current_user: CurrentUser,
+    background_tasks: BackgroundTasks
+):
+    """Regenerar UNA sección (ítem individual) de un bloque con una idea nueva.
+
+    Solo para car_rental/fleetcarrusel, deals, advicestipocarrusel y
+    fav_city/locationscarrusel. FAQ queda excluido a propósito.
+    """
+    request.lpId = landing_page_id
+
+    start_time = time.time()
+    response = IAService.generate_section_content(
+        current_user, db, landing_page_id, request
+    )
+    duration_ms = int((time.time() - start_time) * 1000)
+
+    background_tasks.add_task(
+        _log_ai_generation_background,
+        db=db,
+        current_user=current_user,
+        landing_page_id=landing_page_id,
+        request=request,
+        response=response,
+        duration_ms=duration_ms
+    )
+
+    return response
+
 # Endpoint de traducción
 @router.post("/{landing_page_id}/translate", response_model=models.TranslationResponse)
 def translate_content(

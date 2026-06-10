@@ -15,7 +15,13 @@ class Proyecto(Base):
     description = Column(Text, nullable=True)
     estado = Column(String(50), nullable=False, default="Pendiente")  # En progreso, Completado, Cancelado
     prioridad = Column(String(20), nullable=False, default="Baja")  # Baja, Media, Alta
-    
+
+    # Dominio destino de la landing page (catálogo por marca en el frontend)
+    dominio = Column(String(150), nullable=True)          # ej. viajemos.com.co
+    dominio_url = Column(String(255), nullable=True)      # ej. https://www.viajemos.com.co
+    dominio_pais = Column(String(120), nullable=True)     # ej. Colombia
+    dominio_idiomas = Column(String(50), nullable=True)   # ej. ES,EN,PT
+
     # Relaciones con usuarios
     created_by = Column(PG_UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     assigned_to = Column(PG_UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)

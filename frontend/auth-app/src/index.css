@@ -1,0 +1,87 @@
+/* ----------------------------------------------------------------------------
+   Design system — tokens compartidos
+   Importado globalmente vía index.js. No contiene reglas de layout agresivas
+   para no alterar vistas no auditadas: solo fuente base + variables.
+---------------------------------------------------------------------------- */
+@import url("https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&display=swap");
+
+:root {
+  --font-sans:
+    "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", sans-serif;
+
+  /* Neutros — una sola familia (slate frío), tintados de forma consistente */
+  --ink-900: #0f172a;
+  --ink-800: #1e293b;
+  --ink-700: #334155;
+  --ink-600: #475569;
+  --ink-500: #64748b;
+  --ink-400: #94a3b8;
+  --ink-300: #cbd5e1;
+  --ink-200: #e2e8f0;
+  --ink-100: #eef1f5;
+  --surface: #ffffff;
+  --bg: #f5f7fa;
+
+  /* Un único acento azul, desaturado — sin gradiente AI */
+  --accent: #1e5fd6;
+  --accent-600: #1a52ba;
+  --accent-700: #164497;
+  --accent-100: #dde8fb;
+  --accent-50: #eef3fd;
+
+  /* Estados semánticos (uso puntual, no como acentos rivales) */
+  --ok: #15803d;
+  --ok-bg: #e7f3ec;
+  --warn: #b45309;
+  --warn-bg: #f6eddd;
+
+  /* Positivo (acciones de salida: traducir / exportar / guardado) y destructivo.
+     Tonos únicos para evitar la deriva de verdes/rojos repartidos en hex sueltos. */
+  --positive: #10b981;
+  --positive-600: #059669;
+  --danger: #ef4444;
+  --danger-600: #dc2626;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
+
+  /* Sombras tintadas en slate/azul — nunca negro puro */
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.08);
+  --shadow-md:
+    0 4px 12px -2px rgba(15, 23, 42, 0.1), 0 2px 6px -2px rgba(15, 23, 42, 0.08);
+  --shadow-lg:
+    0 18px 40px -12px rgba(30, 95, 214, 0.18),
+    0 8px 20px -8px rgba(15, 23, 42, 0.12);
+
+  --maxw: 1200px;
+
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  color: var(--ink-900);
+}
+
+code {
+  font-family: "Geist Mono", source-code-pro, Menlo, Monaco, Consolas,
+    "Courier New", monospace;
+}
+
+/* Foco visible accesible para navegación con teclado (global, no intrusivo) */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}

@@ -11,14 +11,15 @@ services:
       - BACKEND_PORT=8080
       - LM_STUDIO_URL=${LM_STUDIO_URL:-http://host.docker.internal:1234}
     depends_on:
-      - db-test
+      db-test:
+        condition: service_healthy
     volumes:
       - ./src:/app/src
       - ./data:/app/data
       - ./alembic:/app/alembic
     env_file:
       - .env
-    command: uvicorn src.main:app --host 0.0.0.0 --port 8080 --reload
+    command: sh -c "alembic upgrade head && uvicorn src.main:app --host 0.0.0.0 --port 8080 --reload"
 
   db-test:
     image: postgres:17
@@ -31,6 +32,11 @@ services:
       - postgres_data_test:/var/lib/postgresql/data
     ports:
       - "5444:5432" # <-- pgAdmin usará el 5444 para conectarse desde Windows
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d cleanfastapi"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
 volumes:
   postgres_data_test:

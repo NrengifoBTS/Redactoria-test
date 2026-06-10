@@ -9,7 +9,7 @@ from src.entities.logging.user_edit import UserEdit
 from src.entities.landing_page import LandingPage
 from src.entities.logging.ai_generation import AIGeneration
 from src.auth.models import TokenData
-from src.core.config import settings
+from src.auth.permissions import is_admin_user
 from .semantic_analyzer import SemanticAnalyzer
 from .alignment_analyzer import AlignmentAnalyzer
 
@@ -137,7 +137,7 @@ class EditLoggingService:
 
             # Admin attribution logic
             current_user_uuid = current_user.get_uuid()
-            is_admin = settings.is_admin_user(current_user_uuid)
+            is_admin = is_admin_user(db, current_user_uuid)
 
             attributed_user_id = current_user_uuid
             performed_by_user_id = None

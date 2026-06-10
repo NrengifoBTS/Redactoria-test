@@ -438,16 +438,29 @@ export function AppProvider({ children }) {
 
           return { success: true, user, token: access_token };
         } else {
-          const error = await userResponse.text();
-          return { success: false, error };
+          return {
+            success: false,
+            error: "No se pudieron cargar tus datos. Intenta de nuevo.",
+            status: userResponse.status,
+          };
         }
       } else {
-        const error = await response.text();
-        return { success: false, error };
+        // El backend devuelve {detail: "..."}; extraemos el mensaje legible.
+        let detail = "Correo o contraseña incorrectos.";
+        try {
+          const data = await response.json();
+          if (data && data.detail) detail = data.detail;
+        } catch (_) {
+          // respuesta sin JSON: dejamos el mensaje por defecto
+        }
+        return { success: false, error: detail, status: response.status };
       }
     } catch (error) {
       console.error("Error en login:", error);
-      return { success: false, error: error.message };
+      return {
+        success: false,
+        error: "No se pudo conectar con el servidor. Intenta más tarde.",
+      };
     }
   };
 

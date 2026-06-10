@@ -5,8 +5,17 @@ from uuid import uuid4
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from src.database.core import Base
+# Importar todas las entidades registra sus mappers en el registry de SQLAlchemy,
+# necesario para resolver relationships (User -> Proyecto/Blog/Template/...).
 from src.entities.user import User
 from src.entities.todo import Todo
+from src.entities.proyecto import Proyecto  # noqa: F401
+from src.entities.template import Template  # noqa: F401
+from src.entities.landing_page import LandingPage  # noqa: F401
+from src.entities.seccion_lp import SeccionLP  # noqa: F401
+from src.entities.anotacion import Anotacion  # noqa: F401
+from src.entities.blog import Blog  # noqa: F401
+from src.entities.scraping import Scraping  # noqa: F401
 from src.auth.models import TokenData
 from src.auth.service import get_password_hash
 from src.rate_limiter import limiter

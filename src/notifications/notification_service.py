@@ -8,7 +8,7 @@ from src.entities.user import User
 from src.entities.proyecto import Proyecto
 from src.entities.notification_log import NotificationLog, ProjectStatusChange
 from src.auth.models import TokenData
-from src.core.config import settings
+from src.auth.roles import UserRole
 from .notification_config import (
     NotificationRecipientType,
     get_notification_rule
@@ -191,8 +191,10 @@ class NotificationService:
                         recipients.append(assignee)
 
             elif recipient_type == NotificationRecipientType.ADMIN_GROUP:
-                admin_ids = [UUID(admin_id) for admin_id in settings.ADMIN_USER_IDS]
-                admins = db.query(User).filter(User.id.in_(admin_ids)).all()
+                # Admins según el rol en la BD (admin o master), no listas hardcodeadas
+                admins = db.query(User).filter(
+                    User.role.in_([UserRole.ADMIN.value, UserRole.MASTER.value])
+                ).all()
                 for admin in admins:
                     if admin.id != changed_by_user.get_uuid():
                         recipients.append(admin)

@@ -8,35 +8,20 @@ from typing import List, Optional, Dict, Any
 from fastapi import HTTPException, status
 import logging
 from . import models
+from src.auth import roles
+from src.auth.permissions import get_user_role
 
 logging.basicConfig(level=logging.INFO)
 
 # =======================================================================
-# UTILERÍAS DE PERMISOS (Asumiendo que se mantiene esta estructura temporal)
+# UTILERÍAS DE PERMISOS (basadas en el rol del usuario en la BD)
 # =======================================================================
 
-# Lista de IDs de administradores (Manteniendo el snippet original)
-ADMIN_USER_IDS = [
-  '65cd97a4-c3b9-4bfd-b014-55457ae847e3',
-  'f49cda9b-2138-435e-a497-fda85be87e63',
-  'c7c17838-074d-44fa-9248-8dc87c15edd5',
-  '152c46be-e2f4-48da-86b1-592af570624a',
-  'b43f1d04-f339-4cf9-8e4e-4f127f12af5a',
-  '4007b1aa-30a9-4167-8535-639180f8fbc4',
-  ]
 
-
-class CurrentUser(object): 
+class CurrentUser(object):
     """Clase de utilidad para simular el usuario actual obtenido del token."""
-    def __init__(self, id: UUID): self.id = id 
-    def get_uuid(self) -> UUID: return self.id 
-
-def is_admin_user(user_uuid: UUID) -> bool:
-    """Verificar si el usuario es administrador"""
-    if user_uuid is None:
-        return False
-    # Convertir el UUID a string para la comparación con la lista
-    return str(user_uuid) in ADMIN_USER_IDS
+    def __init__(self, id: UUID): self.id = id
+    def get_uuid(self) -> UUID: return self.id
 
 
 # =======================================================================
@@ -65,9 +50,16 @@ def get_blog(current_user: CurrentUser, db: Session, blog_id: UUID) -> Blog:
 
 def create_blog(current_user: CurrentUser, db: Session, blog_request: models.BlogCreate) -> Blog:
     user_id = current_user.get_uuid()
-    
+
+    # Solo admin y editor pueden crear blogs (los redactores no).
+    if not roles.can_create_blog(get_user_role(db, user_id)):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No autorizado. Solo administradores y editores pueden crear blogs.",
+        )
+
     # 1. Preparar datos
-    initial_params_data = blog_request.model_dump(by_alias=False) 
+    initial_params_data = blog_request.model_dump(by_alias=False)
     query_string = f"{blog_request.title} {blog_request.categoria} {blog_request.keywords}"
     
     # 2. Inicializar la entidad ORM (incluyendo el campo 'title' directamente en el constructor)
@@ -106,8 +98,12 @@ def update_blog(current_user: CurrentUser, db: Session, blog_id: UUID, blog_upda
     
     user_id = current_user.get_uuid()
 
-    # Solo el creador o un admin pueden actualizar
-    if not is_admin_user(user_id) and blog.created_by != user_id:
+    # Editan: el creador, el asignado, o un supervisor (admin/editor) sobre contenido ajeno.
+    if (
+        not roles.can_edit_others_content(get_user_role(db, user_id))
+        and blog.created_by != user_id
+        and blog.assigned_to != user_id
+    ):
         logging.warning(f"Intento de UPDATE no autorizado en blog {blog_id} por usuario {user_id}")
         return None
 
@@ -146,8 +142,8 @@ def delete_blog(current_user: CurrentUser, db: Session, blog_id: UUID) -> bool:
         
     user_id = current_user.get_uuid()
 
-    # Solo el creador o un admin pueden eliminar
-    if not is_admin_user(user_id) and blog.created_by != user_id:
+    # Solo el creador o un admin pueden eliminar (los editores no eliminan contenido ajeno)
+    if not roles.can_delete_others_content(get_user_role(db, user_id)) and blog.created_by != user_id:
         logging.warning(f"Intento de DELETE no autorizado en blog {blog_id} por usuario {user_id}")
         return False
 
@@ -174,12 +170,12 @@ def get_blogs(
     user_id = current_user.get_uuid()
     query = db.query(Blog)
 
-    # 1. FILTRO DE VISIBILIDAD (Solo aplica si NO es Admin)
-    if not is_admin_user(user_id):
-        # El usuario normal solo ve blogs que creó O le fueron asignados
+    # 1. FILTRO DE VISIBILIDAD (solo supervisores -admin/editor- ven todo)
+    if not roles.can_view_all_content(get_user_role(db, user_id)):
+        # El redactor solo ve blogs que creó O le fueron asignados
         query = query.filter(or_(Blog.created_by == user_id, Blog.assigned_to == user_id))
     else:
-        # Si es Admin y se especifica 'assigned_to', aplica el filtro global
+        # Si es supervisor y se especifica 'assigned_to', aplica el filtro global
         if assigned_to:
             query = query.filter(Blog.assigned_to == assigned_to)
             
@@ -218,9 +214,9 @@ def get_blogs_assigned_to_user(current_user: CurrentUser, db: Session) -> List[B
 def get_blogs_by_user(current_user: CurrentUser, db: Session, user_id: UUID) -> List[Blog]:
     """Obtener blogs asignados a un usuario específico (solo Admin)."""
     current_user_id = current_user.get_uuid()
-    
+
     # Solo el admin puede usar este endpoint para ver los blogs de otro
-    if not is_admin_user(current_user_id):
+    if not roles.is_admin(get_user_role(db, current_user_id)):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado. Solo administradores pueden ver blogs de otros usuarios por ID.")
         
     blogs = db.query(Blog).filter(Blog.assigned_to == user_id).all()
@@ -242,7 +238,7 @@ def assign_blog(current_user: CurrentUser, db: Session, blog_id: UUID, assigned_
 
     user_id = current_user.get_uuid()
     # Solo el creador o un admin pueden asignar
-    if not is_admin_user(user_id) and blog.created_by != user_id:
+    if not roles.is_admin(get_user_role(db, user_id)) and blog.created_by != user_id:
         logging.warning(f"Intento de ASSIGN no autorizado en blog {blog_id} por usuario {user_id}")
         return None
 
@@ -267,7 +263,7 @@ def unassign_blog(current_user: CurrentUser, db: Session, blog_id: UUID) -> Opti
     user_id = current_user.get_uuid()
 
     # Solo el creador o un admin pueden desasignar
-    if not is_admin_user(user_id) and blog.created_by != user_id:
+    if not roles.is_admin(get_user_role(db, user_id)) and blog.created_by != user_id:
         logging.warning(f"Intento de UNASSIGN no autorizado en blog {blog_id} por usuario {user_id}")
         return None
         

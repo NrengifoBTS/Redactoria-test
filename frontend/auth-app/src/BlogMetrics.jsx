@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import apiService from "./services/apiService.js";
-import { isAdminUser, isEditorUser } from "./utils/roles";
+import { roleLabel } from "./utils/roles";
 import { useCurrentUser } from "./hooks/useApi.js";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
@@ -84,7 +84,7 @@ const BlogMetrics = ({ blogId, onBack }) => {
               letterSpacing: "-0.025em",
             }}
           >
-            Metricas <span style={{ color: "#3b82f6" }}>Blogs</span>
+            Metricas <span style={{ color: "#1e5fd6" }}>Blogs</span>
           </h1>
           <p
             style={{
@@ -120,11 +120,11 @@ const BlogMetrics = ({ blogId, onBack }) => {
               }}
               // Efectos dinámicos con JS para el hover
               onMouseOver={(e) => {
-                e.currentTarget.style.backgroundColor = "#3b82f6";
+                e.currentTarget.style.backgroundColor = "#1e5fd6";
                 e.currentTarget.style.color = "#ffffff";
-                e.currentTarget.style.borderColor = "#3b82f6";
+                e.currentTarget.style.borderColor = "#1e5fd6";
                 e.currentTarget.style.boxShadow =
-                  "0 0 15px rgba(59, 130, 246, 0.5)"; // Efecto de iluminación
+                  "0 0 15px rgba(30, 95, 214, 0.45)"; // Efecto de iluminación
                 e.currentTarget.style.transform = "translateY(-1px)";
               }}
               onMouseOut={(e) => {
@@ -205,8 +205,7 @@ const BlogMetrics = ({ blogId, onBack }) => {
                 style={{
                   width: "2.5rem",
                   height: "2.5rem",
-                  background:
-                    "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)",
+                  background: "#1e5fd6",
                   borderRadius: "50%",
                   display: "flex",
                   alignItems: "center",
@@ -214,7 +213,7 @@ const BlogMetrics = ({ blogId, onBack }) => {
                   color: "white",
                   fontSize: "0.9rem",
                   fontWeight: "700",
-                  boxShadow: "0 2px 4px rgba(37, 99, 235, 0.2)",
+                  boxShadow: "0 2px 6px rgba(30, 95, 214, 0.3)",
                   border: "2px solid #fff",
                 }}
               >
@@ -240,17 +239,13 @@ const BlogMetrics = ({ blogId, onBack }) => {
                   style={{
                     fontSize: "0.7rem",
                     fontWeight: "600",
-                    color: "#2b76ef", // Color del rol para resaltar
+                    color: "#1e5fd6", // Color del rol para resaltar
                     textTransform: "uppercase",
                     letterSpacing: "0.025em",
                     marginTop: "2px",
                   }}
                 >
-                  {isAdminUser(currentUser.id)
-                    ? "Administrador"
-                    : isEditorUser(currentUser.id)
-                      ? "Editor"
-                      : "Redactor"}
+                  {roleLabel(currentUser)}
                 </span>
               </div>
             </div>
@@ -279,8 +274,8 @@ const BlogMetrics = ({ blogId, onBack }) => {
             subtitle="Precisión semántica"
             value={`${((scores?.avg_semantic || scores?.semantic || 0) * 100).toFixed(1)}%`}
             icon="uil-brain"
-            color="#3b82f6"
-            bgColor="rgba(59, 130, 246, 0.1)"
+            color="#1e5fd6"
+            bgColor="rgba(30, 95, 214, 0.1)"
             trend="+2.4%"
           />
           <MetricCard
@@ -384,8 +379,8 @@ const BlogMetrics = ({ blogId, onBack }) => {
                 <defs>
                   {/* Gradiente para Semántica (Azul) */}
                   <linearGradient id="colorSem" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                    <stop offset="5%" stopColor="#1e5fd6" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#1e5fd6" stopOpacity={0} />
                   </linearGradient>
                   {/* Gradiente para Estructura (Morado) */}
                   <linearGradient id="colorStruct" x1="0" y1="0" x2="0" y2="1">
@@ -424,7 +419,7 @@ const BlogMetrics = ({ blogId, onBack }) => {
                   name="Semántica"
                   type="monotone"
                   dataKey="semantic"
-                  stroke="#3b82f6"
+                  stroke="#1e5fd6"
                   strokeWidth={3}
                   fillOpacity={1}
                   fill="url(#colorSem)"

@@ -437,6 +437,68 @@ class ApiService {
     }
   }
 
+  // Regenerar UNA sola sección (ítem individual) de un bloque con idea nueva.
+  // Solo aplica a car_rental/fleetcarrusel, deals, advices y fav_city.
+  async generateSection(params) {
+    try {
+      const {
+        lpId,
+        blockNumber,
+        blockType,
+        itemTitle, // título de la sección (tipo de auto / ciudad) = hilo conductual
+        targetField, // campo destino al que mapear el resultado (ej. "desc_3")
+        cellKey,
+        tema,
+        currentContent = "",
+        templateInfo,
+      } = params;
+
+      const payload = {
+        cellKey,
+        currentContent,
+        blockNumber,
+        blockType,
+        tit: itemTitle,
+        tema,
+        lpId,
+        brand: templateInfo?.proyecto || "mcr",
+        target_field: targetField,
+      };
+
+      const response = await fetch(`${this.baseURL}/ia/${lpId}/section`, {
+        method: "POST",
+        headers: this.getHeaders(),
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          this.handleAuthError();
+          throw new Error("NOT_AUTHENTICATED");
+        }
+
+        const errorText = await response.text();
+        try {
+          const errorData = JSON.parse(errorText);
+          throw new Error(
+            errorData.detail || `Error ${response.status}: ${response.statusText}`,
+          );
+        } catch (e) {
+          throw new Error(`Error ${response.status}: ${errorText}`);
+        }
+      }
+
+      const data = await response.json();
+      return data.generatedContent;
+    } catch (error) {
+      if (error.message === "NOT_AUTHENTICATED") {
+        return null;
+      }
+      console.error("Error regenerando sección:", error);
+      throw error;
+    }
+  }
+
   // Traducir contenido
   async translateContent(
     lpId,
@@ -528,6 +590,16 @@ class ApiService {
       backendData.template_id = frontendData.template_id;
     }
 
+    // Mapear dominio destino
+    if (frontendData.dominio !== undefined)
+      backendData.dominio = frontendData.dominio;
+    if (frontendData.dominio_url !== undefined)
+      backendData.dominio_url = frontendData.dominio_url;
+    if (frontendData.dominio_pais !== undefined)
+      backendData.dominio_pais = frontendData.dominio_pais;
+    if (frontendData.dominio_idiomas !== undefined)
+      backendData.dominio_idiomas = frontendData.dominio_idiomas;
+
     return backendData;
   }
 
@@ -541,6 +613,10 @@ class ApiService {
       priority: this.mapPriorityToFrontend(backendData.prioridad),
       assignedTo: backendData.assigned_to,
       templateId: backendData.template_id,
+      dominio: backendData.dominio,
+      dominioUrl: backendData.dominio_url,
+      dominioPais: backendData.dominio_pais,
+      dominioIdiomas: backendData.dominio_idiomas,
       createdBy: backendData.created_by,
       createdDate: backendData.created_at
         ? backendData.created_at.split("T")[0]
@@ -548,6 +624,8 @@ class ApiService {
       lastModified: backendData.last_modified
         ? backendData.last_modified.split("T")[0]
         : null,
+      // Timestamp completo (fecha + hora) para mostrar "última modificación".
+      lastModifiedAt: backendData.last_modified || null,
       updatedAt: backendData.updated_at,
       assignedAt: backendData.assigned_at
         ? backendData.assigned_at.split("T")[0]
@@ -721,6 +799,41 @@ class ApiService {
       console.error("Error getting users:", error);
       return [];
     }
+  }
+
+  // Lista cruda de usuarios (campos del backend: id, email, first_name, last_name, role)
+  async getUsersRaw() {
+    return this.makeRequest("/users/");
+  }
+
+  // GESTIÓN DE USUARIOS (solo master)
+  async createUser(userData) {
+    return this.makeRequest("/users/", {
+      method: "POST",
+      body: JSON.stringify(userData),
+    });
+  }
+
+  async updateUser(userId, userData) {
+    return this.makeRequest(`/users/${userId}`, {
+      method: "PUT",
+      body: JSON.stringify(userData),
+    });
+  }
+
+  async resetUserPassword(userId, newPassword) {
+    return this.makeRequest(`/users/${userId}/password`, {
+      method: "PUT",
+      body: JSON.stringify({ new_password: newPassword }),
+    });
+  }
+
+  // Soft-delete: activar / desactivar una cuenta (los usuarios no se eliminan).
+  async setUserActive(userId, isActive) {
+    return this.makeRequest(`/users/${userId}/active`, {
+      method: "PUT",
+      body: JSON.stringify({ is_active: isActive }),
+    });
   }
 
   // ENDPOINTS ADICIONALES
@@ -1134,5 +1247,6 @@ export const {
   mapPriorityToBackend,
   mapPriorityToFrontend,
   generateIAContent,
+  generateSection,
   translateContent,
 } = apiService;

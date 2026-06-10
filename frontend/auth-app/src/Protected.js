@@ -5,24 +5,24 @@ function ProtectedPage() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const verifyToken = async () => {
+    const verifyAccess = async () => {
       const token = localStorage.getItem("token");
       const API_BASE =
         process.env.REACT_APP_API_URL || "http://192.168.1.129:8080";
 
       try {
-        const response = await fetch(`${API_BASE}/auth/verify-token/${token}`);
+        // Obtenemos el usuario actual (incluye su rol) para decidir el acceso.
+        const response = await fetch(`${API_BASE}/users/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
         if (!response.ok) {
           throw new Error("Token verification failed");
         }
 
-        const data = await response.json();
+        const user = await response.json();
 
-        // Lista de IDs permitidos para el dashboard
-        const allowedIds = [""]; // b24536ec-d0a6-4c43-a685-be62198ca1d2
-
-        if (!allowedIds.includes(data.id)) {
-          // Si el usuario está autenticado pero no autorizado, va a la tabla
+        // El dashboard protegido es solo para administradores.
+        if (user.role !== "admin") {
           navigate("/Redactor");
         }
       } catch (error) {
@@ -32,7 +32,7 @@ function ProtectedPage() {
       }
     };
 
-    verifyToken();
+    verifyAccess();
   }, [navigate]);
 
   // Dashboard para usuarios autorizados (temporal)
